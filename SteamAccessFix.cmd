@@ -1,3 +1,4 @@
+<# :
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 title SteamAccessFix
@@ -18,6 +19,7 @@ if %errorlevel% neq 0 (
 :: Chay phan PowerShell ben duoi file
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText($env:SELF,[Text.Encoding]::UTF8); $i=$s.IndexOf('#PSBEGIN'+'#'); iex $s.Substring($i)"
 exit /b
+: end batch / begin powershell #>
 
 #PSBEGIN#
 # ===============================================================
@@ -35,6 +37,18 @@ $script:AppVersion     = '1.0.0'
 $script:AppName        = 'SteamAccessFix'
 $script:GitHubRepo     = 'vuviett47/SteamAccessFix'
 $script:AutoUpdate     = $false
+
+# Kiem tra quyen Administrator khi chay truc tiep tu PowerShell (irm | iex)
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "`n  [i] Dang yeu cau quyen Administrator de cau hinh mang..." -ForegroundColor Cyan
+    if ($env:SELF -and (Test-Path $env:SELF)) {
+        Start-Process -FilePath $env:SELF -Verb RunAs
+    } else {
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/$($script:GitHubRepo)/main/SteamAccessFix.cmd | iex`"" -Verb RunAs
+    }
+    return
+}
 
 $ThuMucLuu   = Join-Path $env:ProgramData 'SteamAccessFix'
 $FileDns     = Join-Path $ThuMucLuu 'dns-backup.json'
