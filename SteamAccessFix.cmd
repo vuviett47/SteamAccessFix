@@ -679,14 +679,14 @@ function Check-GitHubUpdate {
         $remoteVer = (Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$($script:GitHubRepo)/main/VERSION.txt?t=$tNow" -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 4 -EA Stop).ToString().Trim()
 
         if (-not $remoteVer) { return }
-        if ([version]$remoteVer -le [version]$script:AppVersion) {
+        if ($remoteVer -eq $script:AppVersion) {
             Ok "Đang dùng phiên bản mới nhất (v$script:AppVersion)."
             return
         }
 
         Say ''
-        Ve-Khung "  CÓ PHIÊN BẢN MỚI: v$remoteVer  (hiện tại: v$script:AppVersion)" '' 'Green'
-        Say '    [1]  Cập nhật ngay bây giờ' 'Yellow'
+        Ve-Khung "  CÓ PHIÊN BẢN CHÍNH THỨC: v$remoteVer  (hiện tại: v$script:AppVersion)" '' 'Green'
+        Say '    [1]  Cập nhật / Đồng bộ ngay' 'Yellow'
         Say '    [2]  Bỏ qua, chạy bản hiện tại' 'Gray'
         Say ''
 
