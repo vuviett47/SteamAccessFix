@@ -1,19 +1,31 @@
 <h1 align="center">SteamAccessFix (SAF)</h1>
 
-<p align="center">Công cụ mã nguồn mở dạng tập tin đơn (.cmd) giúp tự động khắc phục sự cố kết nối và mở khóa Steam (Store, Community, CDN hình ảnh/tài nguyên) trên Windows 10 và 11.</p>
+<p align="center">Công cụ mã nguồn mở dạng tập tin đơn (.cmd) giúp tự động khắc phục sự cố kết nối, mở khóa Steam (Store, Community, CDN), sửa lỗi màn hình đen / màn khói PUBG, hỗ trợ định tuyến Naraka & Delta Force, và tối ưu ping cho game thủ trên Windows 10 và 11.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-blue?logo=windows" alt="Windows Support">
   <img src="https://img.shields.io/badge/Driver-Zero%20Dependency-brightgreen" alt="No Drivers">
-  <img src="https://img.shields.io/badge/Anti--Cheat-Safe-success" alt="Anti-Cheat Safe">
+  <img src="https://img.shields.io/badge/Anti--Cheat-100%25%20Safe-success" alt="Anti-Cheat Safe">
+  <img src="https://img.shields.io/badge/Version-1.1.0-orange" alt="Version 1.1.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
 </p>
 
 <hr>
 
+## Tính năng chính (v1.1.0)
+
+- **Mở khóa toàn diện Steam**: Khắc phục lỗi không tải được Steam Store, Community, hồ sơ người chơi, hình ảnh, CDN tải game và Steam Web API.
+- **Hỗ trợ tối ưu CS2 & Dota 2**: Đảm bảo tải mượt mà CS2 / Dota 2 blog, cập nhật, cộng đồng, Steam API Game Coordinator (GC); lưu lượng trận đấu SDR UDP đi trực tiếp 100%.
+- **Sửa triệt để lỗi PUBG**: Xử lý tình trạng màn hình đen, màn hình khói vô tận khi khởi động PUBG tại sảnh chờ (lobby) do nhà mạng FPT, VNPT chặn tên miền Chromium/CEF.
+- **Hỗ trợ định tuyến Naraka: Bladepoint & Delta Force**: Đảm bảo kết nối thông suốt đến các dịch vụ máy chủ và API sự kiện của game.
+- **Tối ưu độ trễ và Ping Windows**: Tự động tinh chỉnh network stack Windows (`NetworkThrottlingIndex`, `SystemResponsiveness`, TCP AutoTuning) nhằm loại bỏ độ trễ và nghẽn băng thông khi chơi game.
+- **100% Anti-Cheat Safe**: Hoạt động hoàn toàn ở chế độ người dùng (User-Mode), không cài driver kernel (`WinDivert`, GoodbyeDPI), an toàn tuyệt đối với BattlEye, Easy Anti-Cheat, Vanguard, VAC, ACE.
+
+---
+
 ## Cách sử dụng
 
-### Cách 1 - Chạy nhanh qua PowerShell
+### Cách 1 - Chạy nhanh qua PowerShell (Khuyên dùng)
 
 1. Mở **Start Menu**, tìm `PowerShell` (hoặc `Terminal`) và mở lên.
 2. Dán đoạn mã bên dưới và nhấn **Enter**:
@@ -22,7 +34,7 @@
    irm https://raw.githubusercontent.com/vuviett47/SteamAccessFix/main/SteamAccessFix.cmd | iex
    ```
 
-   *Nếu lệnh trên bị chặn do DNS, hãy dùng lệnh sau (tự động dùng DoH Cloudflare):*
+   *Nếu lệnh trên bị chặn do DNS của nhà mạng, hãy dùng lệnh sau (tự động dùng DoH Cloudflare để tải):*
    ```powershell
    iex (curl.exe -s --doh-url https://1.1.1.1/dns-query https://raw.githubusercontent.com/vuviett47/SteamAccessFix/main/SteamAccessFix.cmd | Out-String)
    ```
@@ -34,7 +46,7 @@
 1. Tải về file kịch bản:
    * [**SteamAccessFix.cmd**](https://raw.githubusercontent.com/vuviett47/SteamAccessFix/main/SteamAccessFix.cmd) *(Nhấp chuột phải chọn Lưu liên kết dưới dạng... / Save link as...)*
 2. Nhấp đúp chuột hoặc nhấp chuột phải chọn **Run as administrator** vào file `SteamAccessFix.cmd`.
-3. Công cụ sẽ tự động phát hiện tình trạng mạng và kích hoạt phương pháp tối ưu nhất.
+3. Công cụ sẽ tự động phát hiện tình trạng mạng, áp dụng các tinh chỉnh và kích hoạt chế độ tối ưu nhất.
 
 ---
 
@@ -44,35 +56,33 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 
 | Cấp độ | Phương pháp | Cơ chế kỹ thuật |
 | :--- | :--- | :--- |
-| **Level 0** | **Kiểm tra ban đầu** | Kiểm tra kết nối tới máy chủ Steam. Nếu mạng đã vào được bình thường, công cụ dừng lại ngay và không thay đổi bất kỳ cài đặt nào. |
-| **Level 1** | **DNS Google** | Gán DNS Google (`8.8.8.8` & IPv6 `2001:4860:4860::8888`), xóa cache DNS để chặn triệt để tình trạng DNS poisoning từ modem/nhà mạng. |
-| **Level 2** | **SplitProxy (SNI)** | Khởi chạy proxy nội bộ (C# nhúng sẵn). Phân mảnh gói tin TLS `ClientHello` (cắt đôi chuỗi tên miền SNI) để vô hiệu hóa bộ lọc DPI bắt gói tin. |
+| **Level 0** | **Kiểm tra ban đầu** | Kiểm tra kết nối tới máy chủ Steam và PUBG. Nếu mạng đã hoạt động bình thường, công cụ chỉ áp dụng tinh chỉnh network giảm ping và không can thiệp sâu. |
+| **Level 1** | **DNS Google + IPv6** | Gán DNS Google (`8.8.8.8` & IPv6 `2001:4860:4860::8888`), xóa cache DNS để chặn triệt để tình trạng DNS poisoning từ modem/nhà mạng. |
+| **Level 2** | **SplitProxy (SNI Fragmentation)** | Khởi chạy proxy nội bộ (C# nhúng sẵn). Phân mảnh gói tin TLS `ClientHello` (chia tách SNI) để vô hiệu hóa tường lửa DPI của nhà mạng FPT/VNPT. |
 | **Level 3** | **DoH Fallback** | Truy vấn IP máy chủ gốc trực tiếp từ Cloudflare/Google qua DNS-over-HTTPS, hỗ trợ gán tạm thời vào file hosts nếu cần. |
 
 ---
 
-## Điểm vượt trội về an toàn
+## Điểm vượt trội về an toàn và hiệu năng
 
-* **100% User-Mode (Không Driver)**: Hoàn toàn không cài đặt dịch vụ nền hay driver kernel (`WinDivert`). An toàn 100%, không bao giờ bị các hệ thống chống gian lận (Vanguard, Easy Anti-Cheat, BattlEye, FACEIT) cảnh báo hay khóa tài khoản.
-* **Định tuyến chọn lọc (Selective Routing)**: Tự động tạo tệp cấu hình Proxy Auto-Configuration (PAC). Chỉ lưu lượng truy cập của riêng Steam mới đi qua proxy; các trò chơi khác, trình duyệt và kết nối mạng thông thường hoàn toàn đi thẳng với tốc độ tối đa.
-* **Tự động khôi phục hoàn toàn**: Khi bạn nhấn `Enter` để đóng script, toàn bộ DNS, cài đặt Proxy và file hosts sẽ được trả về trạng thái nguyên bản trước khi chạy. Có cơ chế tự dọn dẹp nếu người dùng vô tình bấm tắt dấu X.
-* **Tự động cập nhật**: Tích hợp sẵn cơ chế kiểm tra phiên bản mới từ GitHub và tự động cập nhật an toàn chỉ với 1 phím bấm.
+- **Zero-Driver (Không Driver)**: Hoàn toàn không cài đặt driver can thiệp sâu vào kernel hệ thống. Không bao giờ kích hoạt cờ cảnh báo của bất kỳ phần mềm chống gian lận nào.
+- **Chỉ Proxy Web, Match Game đi thẳng**: Tệp cấu hình Proxy PAC chỉ áp dụng cho danh sách tên miền sảnh chờ và web Steam/PUBG/Naraka. Toàn bộ lưu lượng gói tin trận đấu (UDP game match traffic) kết nối trực tiếp đến máy chủ game, đảm bảo 0 ms độ trễ phát sinh.
+- **Tự động khôi phục hoàn toàn**: Khi bạn nhấn `Enter` để thoát, toàn bộ cấu hình DNS, PAC Proxy và Registry sẽ được hoàn trả về trạng thái nguyên bản trước khi chạy.
+- **Tự phục hồi sau sự cố**: Nếu máy tính bị sập nguồn đột ngột hoặc người dùng tắt ngang cửa sổ, công cụ sẽ tự động phát hiện và dọn dẹp cấu hình dư thừa ở lần khởi động kế tiếp.
 
 ---
 
 > [!TIP]
-> - **Hãy giữ cửa sổ console mở** trong suốt quá trình chơi game hoặc duyệt Steam nếu công cụ đang hoạt động ở chế độ `Level 2 (SplitProxy)`.
-> - **Phím tắt điều khiển khi đang chạy:**
->   - Gõ `T` + Enter: Kiểm tra lại tốc độ và trạng thái kết nối tới Steam.
->   - Gõ `K` + Enter: Giữ lại thiết lập DNS Google trên máy và thoát chương trình.
->   - Nhấn `Enter`: **Khôi phục toàn bộ cài đặt mạng ban đầu** và thoát an toàn.
-
-> [!NOTE]
-> - Lệnh `irm` trong PowerShell dùng để tải mã nguồn từ liên kết, và `iex` sẽ thực thi mã đó trong bộ nhớ.
-> - Bạn có thể xem toàn bộ mã nguồn công khai trực tiếp tại file [`SteamAccessFix.cmd`](SteamAccessFix.cmd).
+> - **Hãy giữ cửa sổ console mở** trong suốt quá trình chơi game hoặc duyệt Steam nếu công cụ đang chạy ở chế độ `Level 2 (SplitProxy)`.
+> - **Phím tắt điều khiển linh hoạt:**
+>   - Gõ `T` + Enter: **Kiểm tra lại (Re-test)** trạng thái kết nối tới toàn bộ dịch vụ.
+>   - Gõ `1` + Enter: **Chạy Cấp độ 1** (Google DNS + Tối ưu Ping, tắt Proxy).
+>   - Gõ `2` + Enter: **Chạy Cấp độ 2** (SplitProxy SNI Fragmentation vượt chặn mạnh).
+>   - Gõ `K` + Enter: **Giữ lại (Keep)** thiết lập DNS và tinh chỉnh network trên máy rồi thoát.
+>   - Nhấn `Enter` hoặc `Q`: **Khôi phục toàn bộ cài đặt mạng ban đầu** và thoát an toàn.
 
 ---
 
 <p align="center">
-  <b>Phiên bản hiện tại:</b> 1.0.0 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
+  <b>Phiên bản hiện tại:</b> 1.1.0 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
 </p>

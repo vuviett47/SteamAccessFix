@@ -1,91 +1,179 @@
+<# :
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 title SteamAccessFix
 set "SELF=%~f0"
 
-:: -------------------------------------------------------------
-::  SteamAccessFix - Standalone Steam Connectivity Tool
-:: -------------------------------------------------------------
-
 :: Tu nang quyen Administrator neu chua co
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [i] Requesting Administrator privileges...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:SELF -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:SELF -Verb RunAs"
     exit /b
 )
 
 :: Chay phan PowerShell ben duoi file
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText($env:SELF,[Text.Encoding]::UTF8); $i=$s.IndexOf('#PSBEGIN'+'#'); iex $s.Substring($i)"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$s=[IO.File]::ReadAllText($env:SELF,[Text.Encoding]::UTF8); $i=$s.IndexOf('#PSBEGIN'+'#'); iex $s.Substring($i)"
 exit /b
+: end batch / begin powershell #>
 
 #PSBEGIN#
-# ===============================================================
-#  SteamAccessFix - Standalone Steam Connectivity Tool
-#  Pure User-Mode Windows 10/11 - No Drivers / No WinDivert
-# ===============================================================
+# ================================================================
+#  SteamAccessFix v1.1.0 - All-In-One Game & Store Fix (Windows)
+#  Pure User-Mode  |  No Drivers  |  Anti-Cheat Safe
+# ================================================================
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
+
+# Fix hien thi tieng Viet co dau trong console Windows
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+try { chcp 65001 | Out-Null } catch { }
+
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-$Host.UI.RawUI.WindowTitle = 'SteamAccessFix'
+$Host.UI.RawUI.WindowTitle = 'SteamAccessFix v1.1.0'
 
-# --- Cau hinh & Du lieu ---
-$script:AppVersion     = '1.0.0'
-$script:AppName        = 'SteamAccessFix'
-$script:GitHubRepo     = 'vuviett47/SteamAccessFix'
-$script:AutoUpdate     = $false
+# --- Cấu hình ---
+$script:AppVersion  = '1.1.0'
+$script:GitHubRepo  = 'vuviett47/SteamAccessFix'
+$script:AutoUpdate  = $false
 
-$ThuMucLuu   = Join-Path $env:ProgramData 'SteamAccessFix'
-$FileDns     = Join-Path $ThuMucLuu 'dns-backup.json'
-$FileProxy   = Join-Path $ThuMucLuu 'proxy-backup.json'
-$FileHosts   = Join-Path $ThuMucLuu 'hosts-backup.txt'
-$FileHostsSys= "$env:SystemRoot\System32\drivers\etc\hosts"
-$RegIE       = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+# Đảm bảo đường dẫn SELF luôn chính xác khi chạy từ file
+if (-not $env:SELF -or -not (Test-Path $env:SELF)) {
+    if ($PSCommandPath -and (Test-Path $PSCommandPath)) { $env:SELF = $PSCommandPath }
+    elseif ($MyInvocation.MyCommand.Path -and (Test-Path $MyInvocation.MyCommand.Path)) { $env:SELF = $MyInvocation.MyCommand.Path }
+}
 
-$CheDoProxy  = @(1, 2, 3, 4)
-$CongProxy   = 18080
+# Kiểm tra quyền Administrator khi chạy trực tiếp từ PowerShell (irm | iex)
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "`n  [!] Đang yêu cầu quyền Administrator..." -ForegroundColor Yellow
+    if ($env:SELF -and (Test-Path $env:SELF)) {
+        Start-Process -FilePath $env:SELF -Verb RunAs
+    } else {
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/$($script:GitHubRepo)/main/SteamAccessFix.cmd | iex`"" -Verb RunAs
+    }
+    return
+}
 
-$CacTrang    = @(
-    @{ Ten = 'store.steampowered.com';        Url = 'https://store.steampowered.com/' },
-    @{ Ten = 'shared.fastly.steamstatic.com'; Url = 'https://shared.fastly.steamstatic.com/' }
+# --- Đường dẫn lưu trữ ---
+$ThuMucLuu     = Join-Path $env:ProgramData 'SteamAccessFix'
+$FileDns       = Join-Path $ThuMucLuu 'dns-backup.json'
+$FileProxy     = Join-Path $ThuMucLuu 'proxy-backup.json'
+$FileHosts     = Join-Path $ThuMucLuu 'hosts-backup.txt'
+$FileNetTweaks = Join-Path $ThuMucLuu 'net-tweaks-backup.json'
+$FileHostsSys  = "$env:SystemRoot\System32\drivers\etc\hosts"
+$RegIE         = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+$CongProxy     = 18080
+
+# --- Danh sách dịch vụ kiểm tra kết nối ---
+$CacTrang = @(
+    @{ Ten = 'Steam Store';      Url = 'https://store.steampowered.com/' },
+    @{ Ten = 'Steam CDN';        Url = 'https://shared.fastly.steamstatic.com/' },
+    @{ Ten = 'CS2 Official';     Url = 'https://www.counter-strike.net/' },
+    @{ Ten = 'Dota 2 Official';  Url = 'https://www.dota2.com/' },
+    @{ Ten = 'PUBG Lobby';       Url = 'https://prod-live-front.playbattlegrounds.com/' },
+    @{ Ten = 'Naraka Official';  Url = 'https://www.narakathegame.com/' },
+    @{ Ten = 'Delta Force';      Url = 'https://www.playdeltaforce.com/' }
 )
 
-$script:DaThayDoiDns   = $false
-$script:DaThayDoiProxy = $false
-$script:DaThayDoiHosts = $false
-$script:Proxy          = $null
-$script:CongDangDung   = 0
-$script:MoTa           = ''
+# --- Domain định tuyến qua proxy (chỉ Web/Lobby/GC, UDP trận đấu đi DIRECT) ---
+$AllGameDomains = @(
+    'steampowered.com', 'steamcommunity.com', 'steamstatic.com',
+    'steam-chat.com', 'steamusercontent.com', 'steamgames.com', 'steamcontent.com',
+    'counter-strike.net', 'dota2.com', 'valvesoftware.com',
+    'playbattlegrounds.com', 'pubg.com', 'krafton.com',
+    'narakathegame.com', '24entertainment.net',
+    'playdeltaforce.com', 'levelinfinite.com'
+)
+
+# --- Trạng thái ---
+$script:DaThayDoiDns    = $false
+$script:DaThayDoiProxy  = $false
+$script:DaThayDoiHosts  = $false
+$script:DaThayDoiTweaks = $false
+$script:Proxy           = $null
+$script:CongDangDung    = 0
+$script:MoTa            = ''
+$script:CurrentLevel    = 0
 
 New-Item -ItemType Directory -Force -Path $ThuMucLuu | Out-Null
 
-# --- Ham hien thi giao dien ---
+# ================================================================
+#  GIAO DIỆN UI/UX
+# ================================================================
 function Say($m, $mau = 'Gray') { Write-Host $m -ForegroundColor $mau }
-function Ok($m)   { Say "  [OK]  $m" 'Green' }
-function Warn($m) { Say "  [!]   $m" 'Yellow' }
-function Err($m)  { Say "  [X]   $m" 'Red' }
-function Info($m) { Say "  [i]   $m" 'Cyan' }
+function Ok($m)   { Say "  [OK]   $m" 'Green' }
+function Warn($m) { Say "  [!]    $m" 'Yellow' }
+function Err($m)  { Say "  [X]    $m" 'Red' }
+function Info($m) { Say "  [~]    $m" 'Cyan' }
+function Sep()    { Say '  ---------------------------------------------------------------' 'DarkGray' }
+
+function Ve-Khung($tieuDe, $phuDe = '', $mau = 'Cyan') {
+    Say ''
+    Say '  ===============================================================' $mau
+    Say "   $tieuDe" $mau
+    if ($phuDe) {
+        Say "   $phuDe" 'DarkGray'
+    }
+    Say '  ===============================================================' $mau
+    Say ''
+}
+
+function Ve-KhungNho($tieuDe, $mau = 'Yellow') {
+    Say '  ---------------------------------------------------------------' $mau
+    Say "   $tieuDe" $mau
+    Say '  ---------------------------------------------------------------' $mau
+}
+
 function Buoc($n, $m) {
     Say ''
-    Say "===============================================================" 'DarkCyan'
-    Say " [$n] $m" 'Cyan'
-    Say "===============================================================" 'DarkCyan'
+    Sep
+    Say "  [ Cấp độ $n ]  $m" 'Cyan'
+    Sep
 }
 
 function Hoi-CoKhong($cauHoi, $macDinhCo = $true) {
-    $luaChon = if ($macDinhCo) { '[C = Co / K = Khong] (Enter = Co)' } else { '[C = Co / K = Khong] (Enter = Khong)' }
+    $hint = if ($macDinhCo) { 'C/Y=Có  K/N=Không  Enter=Có' } else { 'C/Y=Có  K/N=Không  Enter=Không' }
     while ($true) {
-        $r = Read-Host "  $cauHoi $luaChon"
+        Write-Host "  $cauHoi " -ForegroundColor Yellow -NoNewline
+        Write-Host "[$hint] " -ForegroundColor DarkGray -NoNewline
+        $r = Read-Host
         if ($r -eq '') { return $macDinhCo }
         if ($r -match '^[cCyY]') { return $true }
         if ($r -match '^[kKnN]') { return $false }
     }
 }
 
-# --- Ma C# proxy cat nho ClientHello (khong can driver - SplitProxy) ---
+function Hoi-Menu($tieuDe, [string[]]$mucChon) {
+    Say ''
+    Say "  $tieuDe" 'Yellow'
+    Say ''
+    for ($i = 0; $i -lt $mucChon.Length; $i++) {
+        Write-Host "    " -NoNewline
+        Write-Host " $($i + 1) " -ForegroundColor Black -BackgroundColor DarkCyan -NoNewline
+        Write-Host "  $($mucChon[$i])" -ForegroundColor White
+    }
+    Say ''
+    while ($true) {
+        Write-Host "  Chọn số (1-$($mucChon.Length)): " -ForegroundColor DarkGray -NoNewline
+        $r = Read-Host
+        if ($r -match '^\d+$') {
+            $idx = [int]$r - 1
+            if ($idx -ge 0 -and $idx -lt $mucChon.Length) { return $idx }
+        }
+        Err "Chỉ nhập số từ 1 đến $($mucChon.Length)."
+    }
+}
+
+# ================================================================
+#  MÃ C# SPLITPROXY NHÚNG SẴN
+# ================================================================
 $MaProxy = @'
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -95,12 +183,51 @@ using System.Threading;
 public class SplitProxy
 {
     public int Port;
-    public int Mode = 1;          // 1: cat giua ten SNI, 2: cat sau 1 byte, 3: cat 2 cho, 4: cat sau ky tu dau cua SNI
+    public int Mode = 2;
     public int Connections = 0;
     public string Pac = "";
     private TcpListener listener;
     private volatile bool running;
     private byte[] pacBytes;
+    private static ConcurrentDictionary<string, IPAddress> dnsCache = new ConcurrentDictionary<string, IPAddress>();
+
+    public static IPAddress ResolveSafe(string host)
+    {
+        IPAddress cached;
+        if (dnsCache.TryGetValue(host, out cached)) return cached;
+
+        try {
+            IPAddress[] addrs = Dns.GetHostAddresses(host);
+            foreach (var a in addrs) {
+                if (a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a)) {
+                    dnsCache[host] = a;
+                    return a;
+                }
+            }
+        } catch { }
+
+        try {
+            using (var wc = new WebClient()) {
+                wc.Headers[HttpRequestHeader.Accept] = "application/dns-json";
+                string json = wc.DownloadString("https://dns.google/resolve?name=" + host + "&type=A");
+                int idx = json.IndexOf("\"data\":\"");
+                while (idx > 0) {
+                    int end = json.IndexOf("\"", idx + 8);
+                    if (end > idx) {
+                        string ipStr = json.Substring(idx + 8, end - idx - 8);
+                        IPAddress parsed;
+                        if (IPAddress.TryParse(ipStr, out parsed) && !IPAddress.IsLoopback(parsed)) {
+                            dnsCache[host] = parsed;
+                            return parsed;
+                        }
+                    }
+                    idx = json.IndexOf("\"data\":\"", end);
+                }
+            }
+        } catch { }
+
+        return null;
+    }
 
     public SplitProxy(int port) { Port = port; }
 
@@ -125,24 +252,15 @@ public class SplitProxy
     {
         while (running)
         {
-            try
-            {
-                TcpClient c = listener.AcceptTcpClient();
-                ThreadPool.QueueUserWorkItem(new WaitCallback(Handle), c);
-            }
-            catch (Exception)
-            {
-                if (!running) return;
-            }
+            try { TcpClient c = listener.AcceptTcpClient(); ThreadPool.QueueUserWorkItem(new WaitCallback(Handle), c); }
+            catch (Exception) { if (!running) return; }
         }
     }
 
     private static int HeaderEnd(byte[] b, int len)
     {
         for (int i = 0; i + 3 < len; i++)
-        {
             if (b[i] == 13 && b[i + 1] == 10 && b[i + 2] == 13 && b[i + 3] == 10) return i;
-        }
         return -1;
     }
 
@@ -150,36 +268,22 @@ public class SplitProxy
     {
         port = 443;
         int idx = hp.LastIndexOf(':');
-        if (hp.StartsWith("["))
-        {
+        if (hp.StartsWith("[")) {
             int close = hp.IndexOf(']');
-            if (close > 1)
-            {
+            if (close > 1) {
                 host = hp.Substring(1, close - 1);
-                if (idx > close && idx + 1 < hp.Length)
-                {
-                    int.TryParse(hp.Substring(idx + 1), out port);
-                }
+                if (idx > close && idx + 1 < hp.Length) int.TryParse(hp.Substring(idx + 1), out port);
                 return;
             }
         }
-        if (idx > 0 && idx + 1 < hp.Length)
-        {
-            host = hp.Substring(0, idx);
-            int.TryParse(hp.Substring(idx + 1), out port);
-        }
-        else
-        {
-            host = hp;
-        }
+        if (idx > 0 && idx + 1 < hp.Length) { host = hp.Substring(0, idx); int.TryParse(hp.Substring(idx + 1), out port); }
+        else host = hp;
     }
 
-    // Tim vi tri ten mien trong extension SNI cua ClientHello
     private static int FindSni(byte[] d, int len, out int nameLen)
     {
         nameLen = 0;
-        try
-        {
+        try {
             if (len < 43 || d[0] != 0x16 || d[5] != 0x01) return -1;
             int p = 5 + 4 + 2 + 32;
             p += 1 + d[p];
@@ -187,60 +291,41 @@ public class SplitProxy
             p += 1 + d[p];
             int extEnd = p + 2 + ((d[p] << 8) | d[p + 1]);
             p += 2;
-            while (p + 4 <= extEnd && p + 4 <= len)
-            {
+            while (p + 4 <= extEnd && p + 4 <= len) {
                 int type = (d[p] << 8) | d[p + 1];
-                int el = (d[p + 2] << 8) | d[p + 3];
-                if (type == 0)
-                {
-                    int q = p + 4 + 2 + 1;
-                    nameLen = (d[q] << 8) | d[q + 1];
-                    return q + 2;
-                }
+                int el   = (d[p + 2] << 8) | d[p + 3];
+                if (type == 0) { int q = p + 4 + 2 + 1; nameLen = (d[q] << 8) | d[q + 1]; return q + 2; }
                 p += 4 + el;
             }
-        }
-        catch (Exception) { }
+        } catch (Exception) { }
         return -1;
     }
 
-    private void SendSplit(NetworkStream ss, byte[] d, int len)
+    private void SendSplit(NetworkStream ss, byte[] d, int len, int mode)
     {
         int nameLen;
-        int sni = FindSni(d, len, out nameLen);
-        int mid = (sni > 0 && nameLen > 1) ? sni + nameLen / 2 : 1;
+        int sni   = FindSni(d, len, out nameLen);
+        int mid   = (sni > 0 && nameLen > 1) ? sni + nameLen / 2 : 1;
         int first = (sni > 0) ? sni + 1 : 1;
         int[] cuts;
-        if (Mode == 2) cuts = new int[] { 1 };
-        else if (Mode == 3) cuts = new int[] { 1, mid };
-        else if (Mode == 4) cuts = new int[] { first };
-        else cuts = new int[] { mid };
+        if      (mode == 2) cuts = new int[] { 1 };
+        else if (mode == 3) cuts = new int[] { 1, mid };
+        else if (mode == 4) cuts = new int[] { first };
+        else                cuts = new int[] { mid };
         int pos = 0;
-        for (int i = 0; i < cuts.Length; i++)
-        {
-            int c = cuts[i];
+        foreach (int c in cuts) {
             if (c <= pos || c >= len) continue;
-            ss.Write(d, pos, c - pos);
-            ss.Flush();
+            ss.Write(d, pos, c - pos); ss.Flush();
             Thread.Sleep(25);
             pos = c;
         }
-        ss.Write(d, pos, len - pos);
-        ss.Flush();
+        ss.Write(d, pos, len - pos); ss.Flush();
     }
 
     private static void Pump(Stream from, Stream to, TcpClient a, TcpClient b)
     {
         byte[] buf = new byte[32768];
-        try
-        {
-            int n;
-            while ((n = from.Read(buf, 0, buf.Length)) > 0)
-            {
-                to.Write(buf, 0, n);
-            }
-        }
-        catch (Exception) { }
+        try { int n; while ((n = from.Read(buf, 0, buf.Length)) > 0) to.Write(buf, 0, n); } catch (Exception) { }
         try { a.Close(); } catch (Exception) { }
         try { b.Close(); } catch (Exception) { }
     }
@@ -249,49 +334,45 @@ public class SplitProxy
     {
         TcpClient client = (TcpClient)state;
         TcpClient server = null;
-        try
-        {
+        try {
             client.NoDelay = true;
             client.ReceiveTimeout = 15000;
             NetworkStream cs = client.GetStream();
             byte[] buf = new byte[16384];
-            int len = 0;
-            int he = -1;
-            while (he < 0)
-            {
+            int len = 0, he = -1;
+            while (he < 0) {
                 if (len >= buf.Length) return;
                 int n = cs.Read(buf, len, buf.Length - len);
                 if (n <= 0) return;
                 len += n;
                 he = HeaderEnd(buf, len);
             }
-            string head = Encoding.ASCII.GetString(buf, 0, he);
-            string line = head.Split('\n')[0].Trim();
+            string head    = Encoding.ASCII.GetString(buf, 0, he);
+            string line    = head.Split('\n')[0].Trim();
             string[] parts = line.Split(' ');
             if (parts.Length < 2) return;
-            string method = parts[0].ToUpperInvariant();
+            string method  = parts[0].ToUpperInvariant();
 
-            if (method == "GET" && parts[1].StartsWith("/proxy.pac"))
-            {
+            if (method == "GET" && parts[1].StartsWith("/proxy.pac")) {
                 string h = "HTTP/1.1 200 OK\r\nContent-Type: application/x-ns-proxy-autoconfig\r\nContent-Length: " + pacBytes.Length + "\r\nConnection: close\r\n\r\n";
                 byte[] hb = Encoding.ASCII.GetBytes(h);
                 cs.Write(hb, 0, hb.Length);
                 cs.Write(pacBytes, 0, pacBytes.Length);
                 return;
             }
-            if (method != "CONNECT")
-            {
+            if (method != "CONNECT") {
                 byte[] r = Encoding.ASCII.GetBytes("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-                cs.Write(r, 0, r.Length);
-                return;
+                cs.Write(r, 0, r.Length); return;
             }
 
-            string host;
-            int port;
+            string host; int port;
             SplitHostPort(parts[1], out host, out port);
+            IPAddress targetIp = ResolveSafe(host);
+
             server = new TcpClient();
             server.NoDelay = true;
-            server.Connect(host, port);
+            if (targetIp != null) server.Connect(targetIp, port);
+            else server.Connect(host, port);
             byte[] ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n");
             cs.Write(ok, 0, ok.Length);
             Interlocked.Increment(ref Connections);
@@ -301,33 +382,19 @@ public class SplitProxy
             client.ReceiveTimeout = 8000;
             int fl = cs.Read(first, 0, first.Length);
             if (fl <= 0) return;
-            if (first[0] == 0x16 && fl >= 5)
-            {
+            if (first[0] == 0x16 && fl >= 5) {
                 int need = 5 + ((first[3] << 8) | first[4]);
-                while (fl < need && fl < first.Length)
-                {
-                    int n2 = cs.Read(first, fl, first.Length - fl);
-                    if (n2 <= 0) break;
-                    fl += n2;
-                }
-                SendSplit(ss, first, fl);
-            }
-            else
-            {
-                ss.Write(first, 0, fl);
-            }
+                while (fl < need && fl < first.Length) { int n2 = cs.Read(first, fl, first.Length - fl); if (n2 <= 0) break; fl += n2; }
+                SendSplit(ss, first, fl, Mode);
+            } else ss.Write(first, 0, fl);
             client.ReceiveTimeout = 0;
 
-            TcpClient sv = server;
-            TcpClient cl = client;
+            TcpClient sv = server, cl = client;
             Thread t = new Thread(delegate() { Pump(ss, cs, sv, cl); });
-            t.IsBackground = true;
-            t.Start();
+            t.IsBackground = true; t.Start();
             Pump(cs, ss, cl, sv);
-        }
-        catch (Exception) { }
-        finally
-        {
+        } catch (Exception) { }
+        finally {
             try { client.Close(); } catch (Exception) { }
             try { if (server != null) server.Close(); } catch (Exception) { }
         }
@@ -335,20 +402,17 @@ public class SplitProxy
 }
 '@
 
-# --- Quan ly DNS ---
-function Get-DnsCoDinh($guid) {
-    $kq = @()
-    foreach ($p in 'Tcpip', 'Tcpip6') {
-        $ns = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$p\Parameters\Interfaces\$guid" -ErrorAction SilentlyContinue).NameServer
-        if ($ns) { $kq += @($ns -split '[,\s]+' | Where-Object { $_ }) }
-    }
-    return , $kq
-}
-
+# ================================================================
+#  QUẢN LÝ DNS
+# ================================================================
 function Save-Dns {
     if (Test-Path $FileDns) { return }
     $ds = foreach ($a in (Get-NetAdapter -Physical -ErrorAction SilentlyContinue)) {
-        [pscustomobject]@{ Index = $a.ifIndex; CoDinh = @(Get-DnsCoDinh $a.InterfaceGuid) }
+        [pscustomobject]@{
+            Index = $a.ifIndex
+            NS4   = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($a.InterfaceGuid)"  -EA SilentlyContinue).NameServer
+            NS6   = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$($a.InterfaceGuid)" -EA SilentlyContinue).NameServer
+        }
     }
     @($ds) | ConvertTo-Json -Depth 3 | Set-Content -Path $FileDns -Encoding ASCII
 }
@@ -356,15 +420,12 @@ function Save-Dns {
 function Restore-Dns {
     if (Test-Path $FileDns) {
         try {
-            $b = @(Get-Content $FileDns -Raw | ConvertFrom-Json)
-            foreach ($a in $b) {
-                Set-DnsClientServerAddress -InterfaceIndex $a.Index -ResetServerAddresses -ErrorAction SilentlyContinue
-                $cd = @($a.CoDinh)
-                if ($cd.Count -gt 0) {
-                    Set-DnsClientServerAddress -InterfaceIndex $a.Index -ServerAddresses $cd -ErrorAction SilentlyContinue
-                }
+            foreach ($a in @(Get-Content $FileDns -Raw | ConvertFrom-Json)) {
+                Set-DnsClientServerAddress -InterfaceIndex $a.Index -ResetServerAddresses -EA SilentlyContinue
+                $cds = @($a.NS4, $a.NS6) | Where-Object { $_ }
+                if ($cds.Count -gt 0) { Set-DnsClientServerAddress -InterfaceIndex $a.Index -ServerAddresses $cds -EA SilentlyContinue }
             }
-            Remove-Item $FileDns -Force -ErrorAction SilentlyContinue
+            Remove-Item $FileDns -Force -EA SilentlyContinue
         } catch { }
     }
     ipconfig /flushdns | Out-Null
@@ -374,23 +435,21 @@ function Restore-Dns {
 function Set-GoogleDns {
     Save-Dns
     $script:DaThayDoiDns = $true
-    $adapters = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up')
-    if ($adapters.Count -eq 0) {
-        $adapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up')
-    }
+    $adapters = @(Get-NetAdapter -Physical -EA SilentlyContinue | Where-Object Status -eq 'Up')
+    if ($adapters.Count -eq 0) { $adapters = @(Get-NetAdapter -EA SilentlyContinue | Where-Object Status -eq 'Up') }
     foreach ($a in $adapters) {
-        Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses '8.8.8.8', '2001:4860:4860::8888' -ErrorAction SilentlyContinue
+        Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses '8.8.8.8','8.8.4.4','2001:4860:4860::8888','2001:4860:4860::8844' -EA SilentlyContinue
     }
     ipconfig /flushdns | Out-Null
-    Start-Sleep -Seconds 1
+    Start-Sleep -Milliseconds 600
 }
 
-# --- Thong bao WinInet & Quan ly Proxy ---
+# ================================================================
+#  QUẢN LÝ PROXY (PAC + SplitProxy)
+# ================================================================
 function Notify-Inet {
     if (-not ('Win.Inet' -as [type])) {
-        try {
-            Add-Type -Namespace Win -Name Inet -MemberDefinition '[System.Runtime.InteropServices.DllImport("wininet.dll")] public static extern bool InternetSetOption(System.IntPtr h, int o, System.IntPtr b, int l);' -ErrorAction SilentlyContinue
-        } catch { }
+        try { Add-Type -Namespace Win -Name Inet -MemberDefinition '[System.Runtime.InteropServices.DllImport("wininet.dll")] public static extern bool InternetSetOption(System.IntPtr h, int o, System.IntPtr b, int l);' -EA SilentlyContinue } catch { }
     }
     try {
         [Win.Inet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
@@ -400,7 +459,7 @@ function Notify-Inet {
 
 function Save-ProxyCfg {
     if (Test-Path $FileProxy) { return }
-    $cu = (Get-ItemProperty $RegIE -ErrorAction SilentlyContinue).AutoConfigURL
+    $cu = (Get-ItemProperty $RegIE -EA SilentlyContinue).AutoConfigURL
     [pscustomobject]@{ Co = [bool]$cu; Url = $cu } | ConvertTo-Json | Set-Content -Path $FileProxy -Encoding ASCII
 }
 
@@ -409,8 +468,8 @@ function Restore-ProxyCfg {
         try {
             $b = Get-Content $FileProxy -Raw | ConvertFrom-Json
             if ($b.Co) { Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value $b.Url }
-            else       { Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -ErrorAction SilentlyContinue }
-            Remove-Item $FileProxy -Force -ErrorAction SilentlyContinue
+            else        { Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -EA SilentlyContinue }
+            Remove-Item $FileProxy -Force -EA SilentlyContinue
             Notify-Inet
         } catch { }
     }
@@ -423,352 +482,488 @@ function Stop-ProxyMode {
     Restore-ProxyCfg
 }
 
-# --- Quan ly Hosts File (Fallback) ---
-function Save-Hosts {
-    if (Test-Path $FileHosts) { return }
-    if (Test-Path $FileHostsSys) {
-        Copy-Item -Path $FileHostsSys -Destination $FileHosts -Force
-    }
-}
-
-function Restore-Hosts {
-    if (Test-Path $FileHosts) {
-        try {
-            Copy-Item -Path $FileHosts -Destination $FileHostsSys -Force
-            Remove-Item $FileHosts -Force -ErrorAction SilentlyContinue
-            ipconfig /flushdns | Out-Null
-        } catch { }
-    } else {
-        if (Test-Path $FileHostsSys) {
-            try {
-                $lines = Get-Content $FileHostsSys | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
-                Set-Content -Path $FileHostsSys -Value $lines -Encoding ASCII
-                ipconfig /flushdns | Out-Null
-            } catch { }
-        }
-    }
-    $script:DaThayDoiHosts = $false
-}
-
-function Restore-All {
-    Say ''
-    Info 'Dang khoi phuc cai dat ban dau...'
-    Stop-ProxyMode
-    Restore-Hosts
-    Restore-Dns
-    Ok 'Da khoi phuc xong moi thiet lap mang.'
-}
-
-# --- Kiem tra ket noi toi Steam ---
-function Test-Steam([switch]$Show, [int]$Port = 0, [string]$ResolveParam = '') {
-    $tatCa = $true
-    foreach ($t in $CacTrang) {
-        $ca = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--max-time', '8')
-        if ($Port -gt 0) { $ca += @('--proxy', "http://127.0.0.1:$Port") }
-        if ($ResolveParam) { $ca += @('--resolve', $ResolveParam) }
-        $ma = & curl.exe @ca $t.Url
-        $tot = ($ma -and $ma -ne '000')
-        if ($Show) {
-            if ($tot) { Ok ("{0,-32} ket noi duoc (HTTP {1})" -f $t.Ten, $ma) }
-            else      { Err ("{0,-32} KHONG ket noi duoc" -f $t.Ten) }
-        }
-        if (-not $tot) { $tatCa = $false }
-    }
-    return $tatCa
-}
-
-# --- DoH DNS Query ---
-function Get-DoHIp([string]$domain) {
-    try {
-        $cf = Invoke-RestMethod -Uri "https://cloudflare-dns.com/dns-query?name=$domain&type=A" -Headers @{ accept = 'application/dns-json' } -TimeoutSec 5 -ErrorAction Stop
-        $ans = ($cf.Answer | Where-Object { $_.type -eq 1 }).data
-        if ($ans -and $ans.Count -gt 0) { return @($ans | Where-Object { $_ -notmatch '^127\.' }) }
-    } catch { }
-    try {
-        $gg = Invoke-RestMethod -Uri "https://dns.google/resolve?name=$domain&type=A" -TimeoutSec 5 -ErrorAction Stop
-        $ans = ($gg.Answer | Where-Object { $_.type -eq 1 }).data
-        if ($ans -and $ans.Count -gt 0) { return @($ans | Where-Object { $_ -notmatch '^127\.' }) }
-    } catch { }
-    return @()
-}
-
-# --- Khoi dong SplitProxy ---
-function Start-ProxyMode {
-    if (-not ('SplitProxy' -as [type])) {
-        try { Add-Type -TypeDefinition $MaProxy -Language CSharp -ErrorAction Stop }
-        catch { Err "Khong khoi tao duoc proxy: $($_.Exception.Message)"; return $false }
-    }
-    $px = $null
-    $cong = 0
-    foreach ($p in $CongProxy..($CongProxy + 10)) {
-        try {
-            $x = New-Object SplitProxy -ArgumentList $p
-            $x.Pac = @"
+function Build-PacContent($port) {
+    $domainsJs = ($AllGameDomains | ForEach-Object { "`"$_`"" }) -join ', '
+    return @"
 function FindProxyForURL(url, host) {
   host = host.toLowerCase();
   if (url.substring(0, 5) == "http:") return "DIRECT";
-  var d = ["steampowered.com", "steamcommunity.com", "steamstatic.com", "steam-chat.com", "steamusercontent.com", "steamgames.com", "steamcontent.com"];
+  var d = [$domainsJs];
   for (var i = 0; i < d.length; i++) {
-    if (host == d[i] || dnsDomainIs(host, "." + d[i])) return "PROXY 127.0.0.1:$p";
+    if (host == d[i] || dnsDomainIs(host, "." + d[i])) return "PROXY 127.0.0.1:$port";
   }
   return "DIRECT";
 }
 "@
+}
+
+function Test-Canary([int]$Port = 0) {
+    $ca = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--connect-timeout', '2', '--max-time', '3', '-4')
+    if ($Port -gt 0) { $ca += @('--proxy', "http://127.0.0.1:$Port") }
+    $cSteam = & curl.exe @ca 'https://store.steampowered.com/'
+    $cPubg  = & curl.exe @ca 'https://prod-live-front.playbattlegrounds.com/'
+    return (($cSteam -and $cSteam -ne '000') -and ($cPubg -and $cPubg -ne '000'))
+}
+
+function Start-ProxyMode([int]$forceMode = 0) {
+    if (-not ('SplitProxy' -as [type])) {
+        try { Add-Type -TypeDefinition $MaProxy -Language CSharp -EA Stop }
+        catch { Err "Không khởi tạo được proxy: $($_.Exception.Message)"; return $false }
+    }
+
+    $px = $null; $cong = 0
+    foreach ($p in $CongProxy..($CongProxy + 10)) {
+        try {
+            $x = New-Object SplitProxy -ArgumentList $p
+            $x.Pac = Build-PacContent $p
             $x.Start()
-            $px = $x; $cong = $p
-            break
+            $px = $x; $cong = $p; break
         } catch { }
     }
-    if (-not $px) { Err 'Khong mo duoc cong proxy nao (cong bi chiem).'; return $false }
-    $script:Proxy = $px
-    $script:CongDangDung = $cong
+    if (-not $px) { Err 'Không mở được cổng proxy nào.'; return $false }
 
+    $script:Proxy        = $px
+    $script:CongDangDung = $cong
     Save-ProxyCfg
     Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value "http://127.0.0.1:$cong/proxy.pac"
     Notify-Inet
     $script:DaThayDoiProxy = $true
-    Ok "Proxy noi bo dang chay o 127.0.0.1:$cong"
+    Ok "Proxy nội bộ đang chạy tại cổng $cong"
 
-    foreach ($m in $CheDoProxy) {
-        Say "       Thu kieu cat goi so $m..."
+    # Ưu tiên Mode 2 & 3 vì đây là kiểu phân mảnh vượt được cả DPI gắt của PUBG lẫn Steam
+    $modesToTry = if ($forceMode -gt 0) { @($forceMode) } else { @(2, 3, 1, 4) }
+    $bestMode = 0
+    foreach ($m in $modesToTry) {
+        Say "       Thử kiểu cắt gói SNI #$m ..." 'DarkGray'
         $px.Mode = $m
-        Start-Sleep -Milliseconds 250
-        if (Test-Steam -Show -Port $cong) {
-            Ok "Kieu cat goi so $m hoat dong thanh cong!"
-            $script:MoTa = "SplitProxy kieu cat goi so $m (cong $cong)"
+        Start-Sleep -Milliseconds 150
+        $ca = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--connect-timeout', '2', '--max-time', '3', '-4', '--proxy', "http://127.0.0.1:$cong")
+        $cSteam = & curl.exe @ca 'https://store.steampowered.com/'
+        $cPubg  = & curl.exe @ca 'https://prod-live-front.playbattlegrounds.com/'
+        $okSteam = ($cSteam -and $cSteam -ne '000')
+        $okPubg  = ($cPubg  -and $cPubg  -ne '000')
+
+        if ($okSteam -and $okPubg) {
+            Ok "Kiểu cắt gói #$m mở khóa thành công cả Steam và PUBG!"
+            $script:MoTa = "SplitProxy Mode $m  (cổng $cong)"
             return $true
         }
+        if ($okSteam -and $bestMode -eq 0) {
+            $bestMode = $m
+        }
+    }
+    if ($bestMode -gt 0) {
+        $px.Mode = $bestMode
+        Ok "Kiểu cắt gói #$bestMode mở khóa Steam thành công!"
+        $script:MoTa = "SplitProxy Mode $bestMode  (cổng $cong)"
+        return $true
     }
     Stop-ProxyMode
     return $false
 }
 
-# --- Tu dong kiem tra cap nhat GitHub ---
-function Check-GitHubUpdate {
-    if ($script:GitHubRepo -eq 'USERNAME/REPOSITORY' -or [string]::IsNullOrWhiteSpace($script:GitHubRepo)) {
-        return
+# ================================================================
+#  QUẢN LÝ FILE HOSTS
+# ================================================================
+function Save-Hosts {
+    if (Test-Path $FileHosts) { return }
+    if (Test-Path $FileHostsSys) { Copy-Item -Path $FileHostsSys -Destination $FileHosts -Force }
+}
+
+function Restore-Hosts {
+    if (Test-Path $FileHosts) {
+        try { Copy-Item -Path $FileHosts -Destination $FileHostsSys -Force; Remove-Item $FileHosts -Force -EA SilentlyContinue; ipconfig /flushdns | Out-Null } catch { }
+    } elseif (Test-Path $FileHostsSys) {
+        try {
+            $lines = Get-Content $FileHostsSys | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
+            Set-Content -Path $FileHostsSys -Value $lines -Encoding ASCII
+            ipconfig /flushdns | Out-Null
+        } catch { }
     }
+    $script:DaThayDoiHosts = $false
+}
+
+# ================================================================
+#  TỐI ƯU MẠNG GAME (FPT / VNPT)
+# ================================================================
+function Apply-GamingNetworkTweaks {
+    if (Test-Path $FileNetTweaks) { return }
     try {
-        Info "Dang kiem tra cap nhat tu GitHub ($script:GitHubRepo)..."
-        $rawVersionUrl = "https://raw.githubusercontent.com/$($script:GitHubRepo)/main/VERSION.txt"
-        $remoteVerStr = (Invoke-RestMethod -Uri $rawVersionUrl -TimeoutSec 4 -ErrorAction Stop).ToString().Trim()
+        $reg   = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+        $props = Get-ItemProperty $reg -EA SilentlyContinue
+        [pscustomobject]@{
+            NetworkThrottlingIndex = $props.NetworkThrottlingIndex
+            SystemResponsiveness   = $props.SystemResponsiveness
+        } | ConvertTo-Json | Set-Content -Path $FileNetTweaks -Encoding ASCII
 
-        if ($remoteVerStr -and ([version]$remoteVerStr -gt [version]$script:AppVersion)) {
-            Say ''
-            Say "  =======================================================" 'Cyan'
-            Say "   CO PHIEN BAN MOI TREN GITHUB: v$remoteVerStr" 'Green'
-            Say "   (Phien ban ban dang dung: v$script:AppVersion)" 'White'
-            Say "  =======================================================" 'Cyan'
-            Say ''
-            Say '  [1] Cap nhat ngay bay gio (Tai ve, tu cai va khoi dong lai)' 'Yellow'
-            Say '  [2] Bo qua va tiep tuc chay ban hien tai' 'Gray'
-            Say ''
+        Set-ItemProperty -Path $reg -Name NetworkThrottlingIndex -Value 0xffffffff -EA SilentlyContinue
+        Set-ItemProperty -Path $reg -Name SystemResponsiveness   -Value 0          -EA SilentlyContinue
+        netsh int tcp set global autotuninglevel=normal | Out-Null
+        $script:DaThayDoiTweaks = $true
+    } catch { }
+}
 
-            $choice = '1'
-            if (-not $script:AutoUpdate) {
-                while ($true) {
-                    $r = Read-Host '  Chon 1 hoac 2 roi nhan Enter (Enter = 1)'
-                    if ($r -eq '' -or $r -eq '1') { $choice = '1'; break }
-                    elseif ($r -eq '2') { $choice = '2'; break }
-                }
+function Restore-GamingNetworkTweaks {
+    if (Test-Path $FileNetTweaks) {
+        try {
+            $b   = Get-Content $FileNetTweaks -Raw | ConvertFrom-Json
+            $reg = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+            if ($null -ne $b.NetworkThrottlingIndex) { Set-ItemProperty -Path $reg -Name NetworkThrottlingIndex -Value $b.NetworkThrottlingIndex -EA SilentlyContinue }
+            if ($null -ne $b.SystemResponsiveness)   { Set-ItemProperty -Path $reg -Name SystemResponsiveness   -Value $b.SystemResponsiveness   -EA SilentlyContinue }
+            Remove-Item $FileNetTweaks -Force -EA SilentlyContinue
+        } catch { }
+    }
+    $script:DaThayDoiTweaks = $false
+}
+
+function Restore-All {
+    Say ''
+    Info 'Đang khôi phục toàn bộ cài đặt về trạng thái gốc...'
+    Stop-ProxyMode
+    Restore-GamingNetworkTweaks
+    Restore-Hosts
+    Restore-Dns
+    Ok 'Hệ thống đã được khôi phục sạch sẽ.'
+}
+
+# ================================================================
+#  KIỂM TRA KẾT NỐI DỊCH VỤ
+# ================================================================
+function Test-Connectivity([switch]$Show, [int]$Port = 0, [string]$ResolveParam = '') {
+    $tatCa = $true
+    foreach ($t in $CacTrang) {
+        $ca = @('-s', '-o', 'NUL', '-w', '%{http_code}', '--connect-timeout', '2', '--max-time', '3', '-4')
+        if ($Port -gt 0)     { $ca += @('--proxy', "http://127.0.0.1:$Port") }
+        if ($ResolveParam)   { $ca += @('--resolve', $ResolveParam) }
+        $ma  = & curl.exe @ca $t.Url
+        $tot = ($ma -and $ma -ne '000')
+        if ($Show) {
+            if ($tot) { Ok ("{0,-18}  HTTP {1}  OK" -f $t.Ten, $ma) }
+            else      { Err ("{0,-18}  Bị chặn / Timeout"  -f $t.Ten) }
+        }
+        if (-not $tot) {
+            $tatCa = $false
+            if (-not $Show) { return $false }
+        }
+    }
+    return $tatCa
+}
+
+# ================================================================
+#  DOH DNS QUERY (FALLBACK)
+# ================================================================
+function Get-DoHIp([string]$domain) {
+    foreach ($uri in @(
+        "https://cloudflare-dns.com/dns-query?name=$domain&type=A",
+        "https://dns.google/resolve?name=$domain&type=A"
+    )) {
+        try {
+            $hdrs = if ($uri -match 'cloudflare') { @{ accept = 'application/dns-json' } } else { @{} }
+            $ips  = @((Invoke-RestMethod -Uri $uri -Headers $hdrs -TimeoutSec 5 -EA Stop).Answer | Where-Object { $_.type -eq 1 } | Select-Object -ExpandProperty data | Where-Object { $_ -notmatch '^127\.' })
+            if ($ips.Count -gt 0) { return $ips }
+        } catch { }
+    }
+    return @()
+}
+
+# ================================================================
+#  KIỂM TRA CẬP NHẬT GITHUB
+# ================================================================
+function Check-GitHubUpdate {
+    if ([string]::IsNullOrWhiteSpace($script:GitHubRepo) -or $script:GitHubRepo -eq 'USERNAME/REPOSITORY') { return }
+    # Nếu chạy trực tiếp từ bộ nhớ qua irm | iex thì không cần cập nhật file trên đĩa
+    if (-not $env:SELF -or -not (Test-Path $env:SELF)) { return }
+    try {
+        Info "Kiểm tra cập nhật từ GitHub..."
+        $tNow = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $remoteVer = (Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$($script:GitHubRepo)/main/VERSION.txt?t=$tNow" -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 4 -EA Stop).ToString().Trim()
+
+        if (-not $remoteVer) { return }
+        if ([version]$remoteVer -le [version]$script:AppVersion) {
+            Ok "Đang dùng phiên bản mới nhất (v$script:AppVersion)."
+            return
+        }
+
+        Say ''
+        Ve-Khung "  CÓ PHIÊN BẢN MỚI: v$remoteVer  (hiện tại: v$script:AppVersion)" '' 'Green'
+        Say '    [1]  Cập nhật ngay bây giờ' 'Yellow'
+        Say '    [2]  Bỏ qua, chạy bản hiện tại' 'Gray'
+        Say ''
+
+        $choice = '1'
+        if (-not $script:AutoUpdate) {
+            while ($true) {
+                Write-Host '  Chọn 1 hoặc 2 [Enter = 1]: ' -ForegroundColor DarkGray -NoNewline
+                $r = Read-Host
+                if ($r -eq '' -or $r -eq '1') { $choice = '1'; break }
+                elseif ($r -eq '2')            { $choice = '2'; break }
             }
+        }
 
-            if ($choice -eq '1') {
-                Info 'Dang tai ban cap nhat tu GitHub...'
-                $rawScriptUrl = "https://raw.githubusercontent.com/$($script:GitHubRepo)/main/SteamAccessFix.cmd"
-                $tmpFile = Join-Path $env:TEMP ("SAF_update_" + [guid]::NewGuid().ToString('N') + ".cmd")
-                Invoke-WebRequest -Uri $rawScriptUrl -OutFile $tmpFile -TimeoutSec 15 -ErrorAction Stop
-
-                $content = [IO.File]::ReadAllText($tmpFile, [Text.Encoding]::UTF8)
-                if ($content.Contains('#PSBEGIN#') -and $content.Contains('@echo off') -and ($content.Length -gt 2000)) {
-                    Ok 'Xac thuc goi cap nhat hop le. Dang thay the...'
-                    Copy-Item -Path $tmpFile -Destination $env:SELF -Force
-                    Remove-Item $tmpFile -Force -ErrorAction SilentlyContinue
-                    Ok 'Cap nhat hoan tat! Dang khoi dong lai...'
-                    Start-Process -FilePath cmd.exe -ArgumentList "/c `"$env:SELF`""
-                    exit
-                } else {
-                    Err 'Goi cap nhat khong hop le. Da huy cap nhat.'
-                    Remove-Item $tmpFile -Force -ErrorAction SilentlyContinue
-                    Info 'Tiep tuc chay ban hien tai...'
-                }
+        if ($choice -eq '1') {
+            Info 'Đang tải bản cập nhật từ GitHub...'
+            $tmp = Join-Path $env:TEMP ("SAF_update_" + [guid]::NewGuid().ToString('N') + ".cmd")
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/$($script:GitHubRepo)/main/SteamAccessFix.cmd?t=$tNow" -Headers @{ 'Cache-Control' = 'no-cache' } -OutFile $tmp -TimeoutSec 15 -EA Stop
+            $content = [IO.File]::ReadAllText($tmp, [Text.Encoding]::UTF8)
+            if ($content.Contains('#PSBEGIN#') -and $content.Length -gt 2000) {
+                Ok 'Xác thực gói cập nhật hợp lệ.'
+                Ok "Đã ghi đè cập nhật vào: $env:SELF"
+                Copy-Item -Path $tmp -Destination $env:SELF -Force
+                Remove-Item $tmp -Force -EA SilentlyContinue
+                Info 'Đang khởi động lại phiên bản mới...'
+                Start-Sleep -Milliseconds 600
+                Start-Process -FilePath $env:SELF -WorkingDirectory (Split-Path $env:SELF)
+                exit
             } else {
-                Info "Ban da chon bo qua cap nhat. Tiep tuc chay ban hien tai (v$script:AppVersion)..."
-                Start-Sleep -Milliseconds 800
+                Err 'Gói cập nhật không hợp lệ. Đã hủy.'
+                Remove-Item $tmp -Force -EA SilentlyContinue
             }
         } else {
-            Ok "Ban dang dung phien ban moi nhat (v$script:AppVersion)."
+            Info 'Bỏ qua cập nhật. Tiếp tục chạy bản hiện tại...'
+            Start-Sleep -Milliseconds 600
         }
     } catch { }
 }
 
-# ===============================================================
-#  CHUONG TRINH CHINH
-# ===============================================================
-try {
+# ================================================================
+#  LEVEL 3 - DOH HOSTS FALLBACK
+# ================================================================
+function Invoke-Level3 {
+    Buoc '3' 'Phân giải DoH + Ghi Hosts Tạm Thời'
+    Info 'Đang truy vấn IP trực tiếp từ Cloudflare/Google DoH...'
+    $storeIps = Get-DoHIp 'store.steampowered.com'
+    if ($storeIps.Count -eq 0) {
+        Err 'Không phân giải được IP qua DoH.'
+        return $false
+    }
+    Info "IP phân giải DoH: $($storeIps -join '  |  ')"
+    $hitIp = $null
+    foreach ($ip in $storeIps) {
+        if (Test-Connectivity -ResolveParam "store.steampowered.com:443:$ip") { $hitIp = $ip; break }
+    }
+    if (-not $hitIp) {
+        Err 'Không có IP nào kết nối được qua DoH.'
+        return $false
+    }
+    Ok "Kết nối trực tiếp tới IP $hitIp thành công!"
     Say ''
-    Say '  ===============================================================' 'Cyan'
-    Say "   SteamAccessFix v$script:AppVersion - Standalone Steam Tool" 'White'
-    Say '  ===============================================================' 'Cyan'
-    Say ''
+    Say '  Muốn thêm IP này tạm thời vào file hosts không?' 'Yellow'
+    Say '  (Sẽ tự động gỡ khi thoát script)' 'DarkGray'
+    if (Hoi-CoKhong 'Thêm vào hosts?' $true) {
+        Save-Hosts
+        $script:DaThayDoiHosts = $true
+        $oldHosts = Get-Content $FileHostsSys | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
+        Set-Content -Path $FileHostsSys -Value ($oldHosts + @(
+            "$hitIp store.steampowered.com # SteamAccessFix",
+            "$hitIp shared.fastly.steamstatic.com # SteamAccessFix"
+        )) -Encoding ASCII
+        ipconfig /flushdns | Out-Null
+        if (Test-Connectivity -Show) {
+            Ok 'Cấp độ 3 (Hosts DoH) hoạt động!'
+            $script:MoTa = "Hosts DoH tạm thời ($hitIp)"
+            return $true
+        }
+    }
+    return $false
+}
 
-    # Don dep phien truoc neu bi tat dot ngot (bam nut X)
-    if ((Test-Path $FileDns) -or (Test-Path $FileProxy) -or (Test-Path $FileHosts)) {
-        Warn 'Phien truoc chua dong dung cach (bam X) - dang khoi phuc truoc...'
+# ================================================================
+#  HÀM HIỂN THỊ TRẠNG THÁI & PHÍM TẮT RUNTIME
+# ================================================================
+function Show-StatusBar {
+    $lvlText = switch ($script:CurrentLevel) {
+        0 { 'Cấp độ 0 - Kết nối bình thường' }
+        1 { 'Cấp độ 1 - DNS Google (8.8.8.8) + Tối ưu Ping' }
+        2 { 'Cấp độ 2 - SplitProxy SNI (Phân mảnh TLS)' }
+        3 { 'Cấp độ 3 - DoH Hosts Fallback' }
+        default { "Cấp độ $($script:CurrentLevel)" }
+    }
+    Say ''
+    Ve-Khung "  HỆ THỐNG HOẠT ĐỘNG  -  SẴN SÀNG VÀO GAME" "  $lvlText  |  $($script:MoTa)" 'Green'
+    Say '  Phạm vi hỗ trợ: Steam, PUBG, CS2, Dota 2, Naraka, Delta Force' 'DarkGreen'
+    Say '  Lưu lượng trận đấu UDP đi TRỰC TIẾP (0ms overhead, anti-cheat safe)' 'DarkGray'
+    Say ''
+    Sep
+    Say '  Hướng dẫn:' 'Cyan'
+    Say '  - Mở Steam / Game để chơi bình thường.' 'White'
+    Say '  - GIỮ CỬA SỔ NÀY MỞ trong suốt quá trình chơi game nếu dùng SplitProxy.' 'Yellow'
+    Sep
+    Say '  Phím tắt điều khiển:' 'DarkCyan'
+    Say '  [T]      Kiểm tra lại kết nối tất cả dịch vụ' 'White'
+    Say '  [1]      Chạy Cấp độ 1 - DNS Google only (tắt Proxy)' 'White'
+    Say '  [2]      Chạy Cấp độ 2 - SplitProxy SNI (vượt chặn mạnh hơn)' 'White'
+    Say '  [K]      Giữ lại DNS & tối ưu Ping vĩnh viễn rồi thoát' 'White'
+    Say '  [Enter]  KHÔI PHỤC TOÀN BỘ về ban đầu và thoát an toàn (hoặc gõ Q)' 'White'
+    Sep
+    Say ''
+}
+
+# ================================================================
+#  CHƯƠNG TRÌNH CHÍNH
+# ================================================================
+try {
+    Ve-Khung "  SteamAccessFix v$script:AppVersion  -  Game Connectivity Fix"
+
+    # Dọn dẹp phiên trước bị tắt đột ngột
+    if ((Test-Path $FileDns) -or (Test-Path $FileProxy) -or (Test-Path $FileHosts) -or (Test-Path $FileNetTweaks)) {
+        Warn 'Phiên trước chưa đóng đúng cách - đang dọn dẹp...'
         Restore-All
         Start-Sleep -Seconds 1
+        Say ''
     }
 
-    # Kiem tra cap nhat GitHub
     Check-GitHubUpdate
+    Sep
 
-    # -------------------------------------------------------------
-    # LEVEL 0: Kiem tra ket noi hien tai
-    # -------------------------------------------------------------
-    Buoc '0' 'Kiem tra ket noi Steam hien tai'
-    Info 'Kiem tra ket noi voi thiet lap mang hien co...'
-    if (Test-Steam -Show) {
+    # ------------------------------------------------------------------
+    # LEVEL 0: Kiểm tra kết nối hiện tại
+    # ------------------------------------------------------------------
+    Buoc '0' 'Kiểm tra kết nối hiện tại'
+    Info 'Đang kiểm tra trạng thái các dịch vụ...'
+    Say ''
+    $level0Ok = Test-Connectivity -Show
+    $script:CurrentLevel = 0
+
+    if ($level0Ok) {
         Say ''
-        Ok 'Steam da ket noi binh thuong tren mang cua ban! Khong can thay doi gi.'
+        Ok 'Tất cả dịch vụ hoạt động bình thường!'
         Say ''
-        Read-Host '  Nhan Enter de thoat' | Out-Null
-        return
-    }
+        Say '  Bạn có muốn áp dụng tối ưu Ping Game không?' 'Yellow'
+        Say '  (NetworkThrottlingIndex + TCP AutoTuning - không cần driver, an toàn)' 'DarkGray'
+        if (Hoi-CoKhong 'Áp dụng tối ưu Ping?' $false) {
+            Apply-GamingNetworkTweaks
+            Ok 'Đã tối ưu mạng game (NetworkThrottling + TCP AutoTuning).'
+        }
+        $script:MoTa = if ($script:DaThayDoiTweaks) { 'Tối ưu Ping Game' } else { 'Kết nối bình thường' }
 
-    Warn 'Steam hien dang bi chan hoac khong the truy cap.'
-    Info 'Dang thu lan luot cac phuong phap vuot chan...'
-
-    # -------------------------------------------------------------
-    # LEVEL 1: Doi DNS sang Google (8.8.8.8 + IPv6)
-    # -------------------------------------------------------------
-    Buoc '1' 'Doi DNS sang Google (8.8.8.8 & IPv6) va kiem tra lai'
-    Info 'Dang gan DNS Google tren cac card mang Up...'
-    Set-GoogleDns
-    Ok 'DNS da duoc doi sang Google (8.8.8.8 & 2001:4860:4860::8888).'
-
-    Info 'Kiem tra lai ket noi Steam...'
-    $level1Ok = Test-Steam -Show
-
-    if ($level1Ok) {
-        Say ''
-        Ok 'Phuong phap Level 1 thanh cong! Chi can doi DNS la vao duoc Steam.'
-        $script:MoTa = 'DNS Google (8.8.8.8 / 2001:4860:4860::8888)'
     } else {
-        Warn 'Level 1 chua du: Mang van bi chan sau khi doi DNS.'
+        Warn 'Phát hiện kết nối bị chặn → gây lỗi Store Steam.'
+        Say ''
 
-        # -------------------------------------------------------------
-        # LEVEL 2: Bat SplitProxy (Cat nho goi TLS ClientHello SNI)
-        # -------------------------------------------------------------
-        Buoc '2' 'Bat proxy noi bo cat nho ClientHello (SplitProxy)'
-        Info 'Dang khoi dong proxy noi bo va thu cac kieu cat goi...'
-        $level2Ok = Start-ProxyMode
+        # ------------------------------------------------------------------
+        # LEVEL 1: DNS Google + Tối ưu Network Stack
+        # ------------------------------------------------------------------
+        Buoc '1' 'Gán DNS Google (8.8.8.8 & IPv6) + Tối ưu Ping'
+        Info 'Đang gán DNS Google trên các card mạng đang hoạt động...'
+        Set-GoogleDns
+        Ok 'Đã gán DNS: 8.8.8.8  &  2001:4860:4860::8888'
 
-        if ($level2Ok) {
+        Info 'Đang áp dụng tối ưu network stack cho game...'
+        Apply-GamingNetworkTweaks
+        Ok 'Đã tối ưu NetworkThrottling & TCP AutoTuning.'
+
+        Say ''
+        Info 'Kiểm tra lại kết nối...'
+        Say ''
+        $level1Ok = Test-Connectivity -Show
+        $script:CurrentLevel = 1
+
+        if ($level1Ok) {
             Say ''
-            Ok 'Phuong phap Level 2 thanh cong! SplitProxy da vuot qua chan SNI.'
+            Ok 'Cấp độ 1 thành công! DNS Google đã mở khóa dịch vụ.'
+            $script:MoTa = 'DNS Google (8.8.8.8) + Tối ưu Ping Game'
         } else {
-            Warn 'Level 2 khong thanh cong. Thu phuong phap phan giai DoH...'
-
-            # -------------------------------------------------------------
-            # LEVEL 3: DoH Resolution / Hosts Fallback
-            # -------------------------------------------------------------
-            Buoc '3' 'Kiem tra phan giai DoH (DNS-over-HTTPS)'
-            Info 'Dang truy van IP truc tiep tu Cloudflare/Google DoH...'
-            $storeIps = Get-DoHIp 'store.steampowered.com'
-            $hitIp = $null
-
-            if ($storeIps.Count -gt 0) {
-                Info "IP phan giai DoH: $($storeIps -join ', ')"
-                foreach ($ip in $storeIps) {
-                    if (Test-Steam -ResolveParam "store.steampowered.com:443:$ip") {
-                        $hitIp = $ip
-                        break
-                    }
-                }
-            }
-
-            if ($hitIp) {
-                Ok "Ket noi truc tiep toi IP $hitIp thanh cong!"
+            # Level 1 thất bại → Tự động nhảy Cấp độ 2 (SplitProxy) không cần hỏi
+            Warn 'Cấp độ 1 chưa đủ: Nhà mạng chặn cả SNI (DPI). Tự động chuyển Cấp độ 2...'
+            Buoc '2' 'Kích hoạt SplitProxy (Phân mảnh TLS ClientHello SNI)'
+            Info 'Đang khởi động proxy nội bộ và thử các kiểu cắt gói...'
+            if (Start-ProxyMode) {
+                Ok 'Cấp độ 2 thành công! SplitProxy vượt qua bộ lọc SNI.'
+                $script:CurrentLevel = 2
                 Say ''
-                Say '  Ban co muon them IP nay tam thoi vao file hosts?' 'Yellow'
-                Say '  (Cai dat se duoc tu dong go bo khi script dong).' 'DarkGray'
-                if (Hoi-CoKhong 'Them vao hosts tam thoi?' $true) {
-                    Save-Hosts
-                    $script:DaThayDoiHosts = $true
-                    $steamHosts = @(
-                        "$hitIp store.steampowered.com # SteamAccessFix",
-                        "$hitIp shared.fastly.steamstatic.com # SteamAccessFix"
-                    )
-                    $oldHosts = Get-Content $FileHostsSys | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
-                    Set-Content -Path $FileHostsSys -Value ($oldHosts + $steamHosts) -Encoding ASCII
-                    ipconfig /flushdns | Out-Null
-                    if (Test-Steam -Show) {
-                        Ok 'Phuong phap Level 3 (Hosts DoH) hoat dong!'
-                        $script:MoTa = "Hosts DoH tam thoi ($hitIp)"
-                    }
+                Info 'Kiểm tra trạng thái các dịch vụ qua SplitProxy...'
+                Say ''
+                Test-Connectivity -Show -Port $script:CongDangDung | Out-Null
+            } else {
+                Warn 'Cấp độ 2 thất bại. Tự động chuyển sang Cấp độ 3 (DoH Fallback)...'
+                if (Invoke-Level3) {
+                    $script:CurrentLevel = 3
+                } else {
+                    Err 'Không kết nối được qua DoH Fallback.'
                 }
             }
         }
     }
 
-    # -------------------------------------------------------------
-    # TRANG THAI HOAT DONG
-    # -------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # MÀN HÌNH TRẠNG THÁI & VÒNG LẶP PHÍM TẮT
+    # ------------------------------------------------------------------
     if ($script:MoTa -eq '') {
         Say ''
-        Say '===============================================================' 'Red'
-        Say '  KHONG THE VUOT QUA CHAN' 'Red'
-        Say '===============================================================' 'Red'
-        Err 'Tat ca cac phuong phap user-mode deu khong the ket noi.'
-        Info 'Giai thich ky thuat:'
-        Say '   ISP cua ban dang chan theo dai IP hoac su dung DPI nang cao' 'DarkGray'
-        Say '   yeu cuu can thiep muc goi tin (WinDivert/driver) hoac can VPN/WARP.' 'DarkGray'
+        Ve-Khung '  KHONG THE VUOT QUA CHAN  -  Tat ca phuong phap da that bai' '' 'Red'
+        Err 'Tất cả các phương pháp user-mode đều thất bại.'
+        Info 'Có thể ISP đang chặn toàn bộ IP hoặc đường truyền quốc tế gặp sự cố.'
         Say ''
-        Read-Host '  Nhan Enter de khoi phuc va thoat' | Out-Null
+        Sep
+        Say '  Gợi ý:' 'Yellow'
+        Say '  - Thử lại sau 30 phút (ISP có thể tự khắc phục).' 'White'
+        Say '  - Dùng VPN tạm thời để vào Steam Store trước.' 'White'
+        Say '  - Kiểm tra tốc độ mạng với fast.com / speedtest.net.' 'White'
+        Sep
+        Say ''
+        Write-Host '  Nhấn Enter để khôi phục và thoát: ' -ForegroundColor DarkGray -NoNewline
+        Read-Host | Out-Null
     } else {
-        Say ''
-        Say '===============================================================' 'Green'
-        Say '  STEAM ACCESS FIX DANG HOAT DONG' 'Green'
-        Say "  Che do dang dung: $script:MoTa" 'Green'
-        Say '  Pham vi: Chi ap dung cho cac ket noi Steam' 'Green'
-        Say '===============================================================' 'Green'
-        Say ''
-        Say '  Huong dan:' 'Cyan'
-        Say '  * Ban co the mo trinh duyet hoac Steam client de su dung.' 'White'
-        Say '  * Neu trang thieu hinh / CSS, hay nhan Ctrl+F5 tren trinh duyet.' 'DarkGray'
-        Say '  * HAY GIU CUA SO NAY MO trong khi choi game hoac luot Steam.' 'Yellow'
-        Say ''
-        Say '  Dieu khien:' 'DarkCyan'
-        Say '  * Go [T] + Enter  : Kiem tra lai ket noi Steam' 'White'
-        Say '  * Go [K] + Enter  : Giu lai DNS Google va thoat' 'White'
-        Say '  * Nhan [Enter]    : KHOI PHUC MOI THIET LAP va thoat an toan' 'White'
-        Say ''
+        Show-StatusBar
 
         while ($true) {
-            $k = Read-Host '  Go [T] de test lai | [K] de giu DNS | nhan [Enter] de KHOI PHUC va thoat'
+            Write-Host '  Lựa chọn [T / 1 / 2 / K / Enter=Thoát]: ' -ForegroundColor Yellow -NoNewline
+            $k = Read-Host
+
             if ($k -match '^[tT]') {
                 Say ''
-                Info 'Dang kiem tra lai ket noi...'
-                Test-Steam -Show -Port $script:CongDangDung | Out-Null
+                Info 'Đang kiểm tra lại kết nối tất cả dịch vụ...'
                 Say ''
+                Test-Connectivity -Show -Port $script:CongDangDung | Out-Null
+                Say ''
+                Show-StatusBar
+            }
+            elseif ($k -eq '2') {
+                Say ''
+                Info 'Đang kích hoạt Cấp độ 2 (SplitProxy)...'
+                if (Start-ProxyMode) {
+                    Ok 'SplitProxy đang hoạt động!'
+                    $script:CurrentLevel = 2
+                } else {
+                    Err 'Không khởi động được SplitProxy.'
+                }
+                Say ''
+                Show-StatusBar
+            }
+            elseif ($k -eq '1') {
+                Say ''
+                Info 'Đang chuyển về Cấp độ 1 (DNS Google only)...'
+                Stop-ProxyMode
+                $script:CurrentLevel = 1
+                $script:MoTa = 'DNS Google (8.8.8.8) + Tối ưu Ping Game'
+                Ok 'Đã tắt Proxy. Đang chạy Cấp độ 1 (DNS Google only).'
+                Say ''
+                Show-StatusBar
             }
             elseif ($k -match '^[kK]') {
                 Say ''
-                Info 'Ban da chon giu lai DNS Google. Proxy va hosts se duoc khoi phuc.'
-                $script:DaThayDoiDns = $false
-                if (Test-Path $FileDns) {
-                    Remove-Item $FileDns -Force -ErrorAction SilentlyContinue
-                }
+                Info 'Đã chọn giữ lại DNS Google và tối ưu Ping.'
+                $script:DaThayDoiDns    = $false
+                $script:DaThayDoiTweaks = $false
+                if (Test-Path $FileDns)       { Remove-Item $FileDns       -Force -EA SilentlyContinue }
+                if (Test-Path $FileNetTweaks) { Remove-Item $FileNetTweaks -Force -EA SilentlyContinue }
+                Stop-ProxyMode
+                Ok 'DNS Google & tối ưu Ping đã được lưu vĩnh viễn trên máy.'
+                break
+            }
+            elseif ($k -match '^[qQ]' -or [string]::IsNullOrWhiteSpace($k)) {
                 break
             }
             else {
-                break
+                Show-StatusBar
             }
         }
     }
 }
 finally {
-    if ($script:DaThayDoiDns -or $script:DaThayDoiProxy -or $script:DaThayDoiHosts) {
+    if ($script:DaThayDoiDns -or $script:DaThayDoiProxy -or $script:DaThayDoiHosts -or $script:DaThayDoiTweaks) {
+        Say ''
+        Sep
         Restore-All
         Start-Sleep -Seconds 2
     }
