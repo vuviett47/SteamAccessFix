@@ -6,13 +6,13 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-blue?logo=windows" alt="Windows Support">
   <img src="https://img.shields.io/badge/Driver-Zero%20Dependency-brightgreen" alt="No Drivers">
   <img src="https://img.shields.io/badge/Anti--Cheat-100%25%20Safe-success" alt="Anti-Cheat Safe">
-  <img src="https://img.shields.io/badge/Version-1.1.0-orange" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/Version-1.1.2-orange" alt="Version 1.1.2">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
 </p>
 
 <hr>
 
-## Tính năng chính (v1.1.0)
+## Tính năng chính (v1.1.2)
 
 - **Mở khóa toàn diện Steam**: Khắc phục lỗi không tải được Steam Store, Community, hồ sơ người chơi, hình ảnh, CDN tải game và Steam Web API.
 - **Hỗ trợ tối ưu CS2 & Dota 2**: Đảm bảo tải mượt mà CS2 / Dota 2 blog, cập nhật, cộng đồng, Steam API Game Coordinator (GC); lưu lượng trận đấu SDR UDP đi trực tiếp 100%.
@@ -75,7 +75,6 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 > [!TIP]
 > - **Hãy giữ cửa sổ console mở** trong suốt quá trình chơi game hoặc duyệt Steam nếu công cụ đang chạy ở chế độ `Level 2 (SplitProxy)`.
 > - **Phím tắt điều khiển linh hoạt:**
->   - Gõ `T` + Enter: **Kiểm tra lại (Re-test)** trạng thái kết nối tới toàn bộ dịch vụ.
 >   - Gõ `1` + Enter: **Chạy Cấp độ 1** (Google DNS + Tối ưu Ping, tắt Proxy).
 >   - Gõ `2` + Enter: **Chạy Cấp độ 2** (SplitProxy SNI Fragmentation vượt chặn mạnh).
 >   - Gõ `K` + Enter: **Giữ lại (Keep)** thiết lập DNS và tinh chỉnh network trên máy rồi thoát.
@@ -84,5 +83,5 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 ---
 
 <p align="center">
-  <b>Phiên bản hiện tại:</b> 1.1.0 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
+  <b>Phiên bản hiện tại:</b> 1.1.2 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
 </p>
