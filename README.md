@@ -6,17 +6,17 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-blue?logo=windows" alt="Windows Support">
   <img src="https://img.shields.io/badge/Driver-Zero%20Dependency-brightgreen" alt="No Drivers">
   <img src="https://img.shields.io/badge/Anti--Cheat-100%25%20Safe-success" alt="Anti-Cheat Safe">
-  <img src="https://img.shields.io/badge/Version-1.1.2-orange" alt="Version 1.1.2">
+  <img src="https://img.shields.io/badge/Version-1.1.3-orange" alt="Version 1.1.3">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
 </p>
 
 <hr>
 
-## Tính năng chính (v1.1.2)
+## Tính năng chính (v1.1.3)
 
 - **Mở khóa toàn diện Steam**: Khắc phục lỗi không tải được Steam Store, Community, hồ sơ người chơi, hình ảnh, CDN tải game và Steam Web API.
 - **Hỗ trợ tối ưu CS2 & Dota 2**: Đảm bảo tải mượt mà CS2 / Dota 2 blog, cập nhật, cộng đồng, Steam API Game Coordinator (GC); lưu lượng trận đấu SDR UDP đi trực tiếp 100%.
-- **Sửa triệt để lỗi PUBG**: Xử lý tình trạng màn hình đen, màn hình khói vô tận khi khởi động PUBG tại sảnh chờ (lobby) do nhà mạng FPT, VNPT chặn tên miền Chromium/CEF.
+- **Sửa triệt để lỗi PUBG (Direct Sniper Port 443 + Hosts Bypass)**: Giải quyết dứt điểm lỗi màn hình khói, **"Connection Lost"** và **"Servers are too busy, please try again later"** sau trận đấu. Sử dụng cơ chế bắt gói TLS trực tiếp trên cổng 443 kết hợp phân mảnh SNI, bảo vệ cả các kết nối socket C++ thuần và libcurl của game mà không phụ thuộc vào cài đặt proxy Windows.
 - **Hỗ trợ định tuyến Naraka: Bladepoint & Delta Force**: Đảm bảo kết nối thông suốt đến các dịch vụ máy chủ và API sự kiện của game.
 - **Tối ưu độ trễ và Ping Windows**: Tự động tinh chỉnh network stack Windows (`NetworkThrottlingIndex`, `SystemResponsiveness`, TCP AutoTuning) nhằm loại bỏ độ trễ và nghẽn băng thông khi chơi game.
 - **100% Anti-Cheat Safe**: Hoạt động hoàn toàn ở chế độ người dùng (User-Mode), không cài driver kernel (`WinDivert`, GoodbyeDPI), an toàn tuyệt đối với BattlEye, Easy Anti-Cheat, Vanguard, VAC, ACE.
@@ -83,5 +83,5 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 ---
 
 <p align="center">
-  <b>Phiên bản hiện tại:</b> 1.1.2 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
+  <b>Phiên bản hiện tại:</b> 1.1.3 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
 </p>

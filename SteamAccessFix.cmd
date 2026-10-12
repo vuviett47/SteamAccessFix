@@ -19,7 +19,7 @@ exit /b
 
 #PSBEGIN#
 # ================================================================
-#  SteamAccessFix v1.1.2 - All-In-One Game & Store Fix (Windows)
+#  SteamAccessFix v1.1.3 - All-In-One Game & Store Fix (Windows)
 #  Pure User-Mode  |  No Drivers  |  Anti-Cheat Safe
 # ================================================================
 
@@ -31,10 +31,10 @@ $ProgressPreference    = 'SilentlyContinue'
 $OutputEncoding           = [System.Text.Encoding]::UTF8
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-$Host.UI.RawUI.WindowTitle = 'SteamAccessFix v1.1.2'
+$Host.UI.RawUI.WindowTitle = 'SteamAccessFix v1.1.3'
 
 # --- Cau hinh ---
-$script:AppVersion  = '1.1.2'
+$script:AppVersion  = '1.1.3'
 $script:GitHubRepo  = 'vuviett47/SteamAccessFix'
 $script:AutoUpdate  = $false
 
@@ -69,9 +69,9 @@ $CongProxy     = 18080
 # --- Domain dinh tuyen qua proxy (chi Web/Lobby/GC, UDP tran dau di DIRECT) ---
 $AllGameDomains = @(
     'steampowered.com', 'steamcommunity.com', 'steamstatic.com',
-    'steam-chat.com', 'steamusercontent.com', 'steamgames.com', 'steamcontent.com',
+    'steam-chat.com', 'steamusercontent.com', 'steamgames.com', 'steamcontent.com', 'steamserver.net',
     'counter-strike.net', 'dota2.com', 'valvesoftware.com',
-    'playbattlegrounds.com', 'pubg.com', 'krafton.com',
+    'playbattlegrounds.com', 'pubg.com', 'krafton.com', 'pubgapp.com', 'pubgesports.com',
     'narakathegame.com', '24entertainment.net',
     'playdeltaforce.com', 'levelinfinite.com'
 )
@@ -127,46 +127,90 @@ public class SplitProxy
     public int Mode = 2;
     public int Connections = 0;
     public string Pac = "";
-    private TcpListener listener;
+    public bool HasDirect443 = false;
+    private TcpListener listenerProxy;
+    private TcpListener listenerDirect;
     private volatile bool running;
     private byte[] pacBytes;
-    private static ConcurrentDictionary<string, IPAddress> dnsCache = new ConcurrentDictionary<string, IPAddress>();
+
+    private class DnsEntry {
+        public IPAddress Ip;
+        public long ExpireTick;
+    }
+    private static ConcurrentDictionary<string, DnsEntry> dnsCache = new ConcurrentDictionary<string, DnsEntry>();
 
     public static IPAddress ResolveSafe(string host)
     {
-        IPAddress cached;
-        if (dnsCache.TryGetValue(host, out cached)) return cached;
+        IPAddress parsedIp;
+        if (IPAddress.TryParse(host, out parsedIp)) return parsedIp;
 
+        long now = Environment.TickCount;
+        DnsEntry entry;
+        if (dnsCache.TryGetValue(host, out entry)) {
+            if ((now - entry.ExpireTick) < 0) return entry.Ip;
+        }
+
+        IPAddress resolved = null;
         try {
             IPAddress[] addrs = Dns.GetHostAddresses(host);
             foreach (var a in addrs) {
                 if (a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a)) {
-                    dnsCache[host] = a;
-                    return a;
+                    resolved = a;
+                    break;
                 }
             }
         } catch { }
 
-        try {
-            using (var wc = new WebClient()) {
-                wc.Headers[HttpRequestHeader.Accept] = "application/dns-json";
-                string json = wc.DownloadString("https://dns.google/resolve?name=" + host + "&type=A");
-                int idx = json.IndexOf("\"data\":\"");
-                while (idx > 0) {
-                    int end = json.IndexOf("\"", idx + 8);
-                    if (end > idx) {
-                        string ipStr = json.Substring(idx + 8, end - idx - 8);
-                        IPAddress parsed;
-                        if (IPAddress.TryParse(ipStr, out parsed) && !IPAddress.IsLoopback(parsed)) {
-                            dnsCache[host] = parsed;
-                            return parsed;
+        if (resolved == null) {
+            try {
+                using (var wc = new WebClient()) {
+                    wc.Headers[HttpRequestHeader.Accept] = "application/dns-json";
+                    string json = wc.DownloadString("https://dns.google/resolve?name=" + host + "&type=A");
+                    int idx = json.IndexOf("\"data\":\"");
+                    while (idx > 0) {
+                        int end = json.IndexOf("\"", idx + 8);
+                        if (end > idx) {
+                            string ipStr = json.Substring(idx + 8, end - idx - 8);
+                            IPAddress parsed;
+                            if (IPAddress.TryParse(ipStr, out parsed) && !IPAddress.IsLoopback(parsed)) {
+                                resolved = parsed;
+                                break;
+                            }
                         }
+                        idx = json.IndexOf("\"data\":\"", end);
                     }
-                    idx = json.IndexOf("\"data\":\"", end);
                 }
-            }
-        } catch { }
+            } catch { }
+        }
 
+        if (resolved == null) {
+            try {
+                using (var wc = new WebClient()) {
+                    wc.Headers[HttpRequestHeader.Accept] = "application/dns-json";
+                    string json = wc.DownloadString("https://cloudflare-dns.com/dns-query?name=" + host + "&type=A");
+                    int idx = json.IndexOf("\"data\":\"");
+                    while (idx > 0) {
+                        int end = json.IndexOf("\"", idx + 8);
+                        if (end > idx) {
+                            string ipStr = json.Substring(idx + 8, end - idx - 8);
+                            IPAddress parsed;
+                            if (IPAddress.TryParse(ipStr, out parsed) && !IPAddress.IsLoopback(parsed)) {
+                                resolved = parsed;
+                                break;
+                            }
+                        }
+                        idx = json.IndexOf("\"data\":\"", end);
+                    }
+                }
+            } catch { }
+        }
+
+        if (resolved != null) {
+            dnsCache[host] = new DnsEntry { Ip = resolved, ExpireTick = now + 60000 };
+            return resolved;
+        }
+
+        if (entry != null) return entry.Ip;
         return null;
     }
 
@@ -175,25 +219,47 @@ public class SplitProxy
     public void Start()
     {
         pacBytes = Encoding.UTF8.GetBytes(Pac == null ? "" : Pac);
-        listener = new TcpListener(IPAddress.Loopback, Port);
-        listener.Start();
         running = true;
-        Thread t = new Thread(new ThreadStart(AcceptLoop));
-        t.IsBackground = true;
-        t.Start();
+
+        listenerProxy = new TcpListener(IPAddress.Loopback, Port);
+        listenerProxy.Start();
+        Thread tProxy = new Thread(new ThreadStart(AcceptLoopProxy));
+        tProxy.IsBackground = true;
+        tProxy.Start();
+
+        try {
+            listenerDirect = new TcpListener(IPAddress.Loopback, 443);
+            listenerDirect.Start();
+            HasDirect443 = true;
+            Thread tDirect = new Thread(new ThreadStart(AcceptLoopDirect));
+            tDirect.IsBackground = true;
+            tDirect.Start();
+        } catch {
+            HasDirect443 = false;
+        }
     }
 
     public void Stop()
     {
         running = false;
-        try { listener.Stop(); } catch (Exception) { }
+        try { if (listenerProxy != null) listenerProxy.Stop(); } catch { }
+        try { if (listenerDirect != null) listenerDirect.Stop(); } catch { }
     }
 
-    private void AcceptLoop()
+    private void AcceptLoopProxy()
     {
         while (running)
         {
-            try { TcpClient c = listener.AcceptTcpClient(); ThreadPool.QueueUserWorkItem(new WaitCallback(Handle), c); }
+            try { TcpClient c = listenerProxy.AcceptTcpClient(); ThreadPool.QueueUserWorkItem(new WaitCallback(HandleProxy), c); }
+            catch (Exception) { if (!running) return; }
+        }
+    }
+
+    private void AcceptLoopDirect()
+    {
+        while (running)
+        {
+            try { TcpClient c = listenerDirect.AcceptTcpClient(); ThreadPool.QueueUserWorkItem(new WaitCallback(HandleDirect), c); }
             catch (Exception) { if (!running) return; }
         }
     }
@@ -221,9 +287,9 @@ public class SplitProxy
         else host = hp;
     }
 
-    private static int FindSni(byte[] d, int len, out int nameLen)
+    private static int FindSni(byte[] d, int len, out string sniHost, out int nameLen)
     {
-        nameLen = 0;
+        sniHost = null; nameLen = 0;
         try {
             if (len < 43 || d[0] != 0x16 || d[5] != 0x01) return -1;
             int p = 5 + 4 + 2 + 32;
@@ -235,17 +301,24 @@ public class SplitProxy
             while (p + 4 <= extEnd && p + 4 <= len) {
                 int type = (d[p] << 8) | d[p + 1];
                 int el   = (d[p + 2] << 8) | d[p + 3];
-                if (type == 0) { int q = p + 4 + 2 + 1; nameLen = (d[q] << 8) | d[q + 1]; return q + 2; }
+                if (type == 0) {
+                    int q = p + 4 + 2 + 1;
+                    nameLen = (d[q] << 8) | d[q + 1];
+                    if (q + 2 + nameLen <= len) {
+                        sniHost = Encoding.ASCII.GetString(d, q + 2, nameLen);
+                    }
+                    return q + 2;
+                }
                 p += 4 + el;
             }
-        } catch (Exception) { }
+        } catch { }
         return -1;
     }
 
     private void SendSplit(NetworkStream ss, byte[] d, int len, int mode)
     {
-        int nameLen;
-        int sni   = FindSni(d, len, out nameLen);
+        string sniHost; int nameLen;
+        int sni   = FindSni(d, len, out sniHost, out nameLen);
         int mid   = (sni > 0 && nameLen > 1) ? sni + nameLen / 2 : 1;
         int first = (sni > 0) ? sni + 1 : 1;
         int[] cuts;
@@ -257,7 +330,7 @@ public class SplitProxy
         foreach (int c in cuts) {
             if (c <= pos || c >= len) continue;
             ss.Write(d, pos, c - pos); ss.Flush();
-            Thread.Sleep(25);
+            Thread.Sleep(20);
             pos = c;
         }
         ss.Write(d, pos, len - pos); ss.Flush();
@@ -266,17 +339,67 @@ public class SplitProxy
     private static void Pump(Stream from, Stream to, TcpClient a, TcpClient b)
     {
         byte[] buf = new byte[32768];
-        try { int n; while ((n = from.Read(buf, 0, buf.Length)) > 0) to.Write(buf, 0, n); } catch (Exception) { }
-        try { a.Close(); } catch (Exception) { }
-        try { b.Close(); } catch (Exception) { }
+        try { int n; while ((n = from.Read(buf, 0, buf.Length)) > 0) to.Write(buf, 0, n); } catch { }
+        try { a.Close(); } catch { }
+        try { b.Close(); } catch { }
     }
 
-    private void Handle(object state)
+    private void HandleDirect(object state)
     {
         TcpClient client = (TcpClient)state;
         TcpClient server = null;
         try {
             client.NoDelay = true;
+            try { client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true); } catch { }
+            client.ReceiveTimeout = 10000;
+            NetworkStream cs = client.GetStream();
+            byte[] first = new byte[16384];
+            int fl = cs.Read(first, 0, first.Length);
+            if (fl <= 0) return;
+
+            string sniHost; int nameLen;
+            int sniPos = FindSni(first, fl, out sniHost, out nameLen);
+            if (string.IsNullOrEmpty(sniHost)) return;
+
+            IPAddress targetIp = ResolveSafe(sniHost);
+            if (targetIp == null) return;
+
+            server = new TcpClient();
+            server.NoDelay = true;
+            try { server.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true); } catch { }
+
+            IAsyncResult ar = server.BeginConnect(targetIp, 443, null, null);
+            if (!ar.AsyncWaitHandle.WaitOne(5000, false)) { server.Close(); return; }
+            server.EndConnect(ar);
+
+            NetworkStream ss = server.GetStream();
+            if (first[0] == 0x16 && fl >= 5) {
+                int need = 5 + ((first[3] << 8) | first[4]);
+                while (fl < need && fl < first.Length) { int n2 = cs.Read(first, fl, first.Length - fl); if (n2 <= 0) break; fl += n2; }
+                SendSplit(ss, first, fl, Mode);
+            } else {
+                ss.Write(first, 0, fl);
+            }
+            client.ReceiveTimeout = 0;
+
+            TcpClient sv = server, cl = client;
+            Thread t = new Thread(delegate() { Pump(ss, cs, sv, cl); });
+            t.IsBackground = true; t.Start();
+            Pump(cs, ss, cl, sv);
+        } catch { }
+        finally {
+            try { client.Close(); } catch { }
+            try { if (server != null) server.Close(); } catch { }
+        }
+    }
+
+    private void HandleProxy(object state)
+    {
+        TcpClient client = (TcpClient)state;
+        TcpClient server = null;
+        try {
+            client.NoDelay = true;
+            try { client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true); } catch { }
             client.ReceiveTimeout = 15000;
             NetworkStream cs = client.GetStream();
             byte[] buf = new byte[16384];
@@ -301,25 +424,64 @@ public class SplitProxy
                 cs.Write(pacBytes, 0, pacBytes.Length);
                 return;
             }
+
             if (method != "CONNECT") {
-                byte[] r = Encoding.ASCII.GetBytes("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-                cs.Write(r, 0, r.Length); return;
+                string targetHost = "";
+                int targetPort = 80;
+                Uri uri;
+                if (Uri.TryCreate(parts[1], UriKind.Absolute, out uri)) {
+                    targetHost = uri.Host;
+                    targetPort = uri.Port;
+                } else {
+                    int hi = head.IndexOf("Host: ", StringComparison.OrdinalIgnoreCase);
+                    if (hi >= 0) {
+                        int he2 = head.IndexOf("\r\n", hi);
+                        string hp = (he2 > hi) ? head.Substring(hi + 6, he2 - (hi + 6)).Trim() : head.Substring(hi + 6).Trim();
+                        SplitHostPort(hp, out targetHost, out targetPort);
+                        if (targetPort == 443) targetPort = 80;
+                    }
+                }
+                if (string.IsNullOrEmpty(targetHost)) return;
+
+                IPAddress targetIp = ResolveSafe(targetHost);
+                server = new TcpClient();
+                server.NoDelay = true;
+                try { server.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true); } catch { }
+
+                IAsyncResult ar = (targetIp != null) ? server.BeginConnect(targetIp, targetPort, null, null) : server.BeginConnect(targetHost, targetPort, null, null);
+                if (!ar.AsyncWaitHandle.WaitOne(5000, false)) { server.Close(); return; }
+                server.EndConnect(ar);
+
+                NetworkStream ss = server.GetStream();
+                ss.Write(buf, 0, len); ss.Flush();
+
+                TcpClient sv = server, cl = client;
+                Thread t = new Thread(delegate() { Pump(ss, cs, sv, cl); });
+                t.IsBackground = true; t.Start();
+                Pump(cs, ss, cl, sv);
+                return;
             }
 
             string host; int port;
             SplitHostPort(parts[1], out host, out port);
-            IPAddress targetIp = ResolveSafe(host);
+            IPAddress targetIpConnect = ResolveSafe(host);
 
             server = new TcpClient();
             server.NoDelay = true;
-            if (targetIp != null) server.Connect(targetIp, port);
-            else server.Connect(host, port);
+            try { server.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true); } catch { }
+
+            IAsyncResult arConnect = (targetIpConnect != null) ? server.BeginConnect(targetIpConnect, port, null, null) : server.BeginConnect(host, port, null, null);
+            if (!arConnect.AsyncWaitHandle.WaitOne(5000, false)) {
+                server.Close();
+                return;
+            }
+            server.EndConnect(arConnect);
 
             byte[] ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n");
             cs.Write(ok, 0, ok.Length);
             Interlocked.Increment(ref Connections);
 
-            NetworkStream ss = server.GetStream();
+            NetworkStream ssConnect = server.GetStream();
             byte[] first = new byte[16384];
             client.ReceiveTimeout = 8000;
             int fl = cs.Read(first, 0, first.Length);
@@ -327,18 +489,18 @@ public class SplitProxy
             if (first[0] == 0x16 && fl >= 5) {
                 int need = 5 + ((first[3] << 8) | first[4]);
                 while (fl < need && fl < first.Length) { int n2 = cs.Read(first, fl, first.Length - fl); if (n2 <= 0) break; fl += n2; }
-                SendSplit(ss, first, fl, Mode);
-            } else ss.Write(first, 0, fl);
+                SendSplit(ssConnect, first, fl, Mode);
+            } else ssConnect.Write(first, 0, fl);
             client.ReceiveTimeout = 0;
 
-            TcpClient sv = server, cl = client;
-            Thread t = new Thread(delegate() { Pump(ss, cs, sv, cl); });
-            t.IsBackground = true; t.Start();
-            Pump(cs, ss, cl, sv);
+            TcpClient svConnect = server, clConnect = client;
+            Thread tConnect = new Thread(delegate() { Pump(ssConnect, cs, svConnect, clConnect); });
+            tConnect.IsBackground = true; tConnect.Start();
+            Pump(cs, ssConnect, clConnect, svConnect);
         } catch (Exception) { }
         finally {
-            try { client.Close(); } catch (Exception) { }
-            try { if (server != null) server.Close(); } catch (Exception) { }
+            try { client.Close(); } catch { }
+            try { if (server != null) server.Close(); } catch { }
         }
     }
 }
@@ -401,26 +563,38 @@ function Notify-Inet {
 
 function Save-ProxyCfg {
     if (Test-Path $FileProxy) { return }
-    $cu = (Get-ItemProperty $RegIE -EA SilentlyContinue).AutoConfigURL
-    [pscustomobject]@{ Co = [bool]$cu; Url = $cu } | ConvertTo-Json | Set-Content -Path $FileProxy -Encoding ASCII
+    $cu = Get-ItemProperty $RegIE -EA SilentlyContinue
+    [pscustomobject]@{
+        AutoConfigURL = $cu.AutoConfigURL
+        ProxyEnable   = $cu.ProxyEnable
+        ProxyServer   = $cu.ProxyServer
+        ProxyOverride = $cu.ProxyOverride
+    } | ConvertTo-Json | Set-Content -Path $FileProxy -Encoding ASCII
 }
 
 function Restore-ProxyCfg {
     if (Test-Path $FileProxy) {
         try {
             $b = Get-Content $FileProxy -Raw | ConvertFrom-Json
-            if ($b.Co) { Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value $b.Url }
-            else        { Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -EA SilentlyContinue }
+            if ($b.AutoConfigURL) { Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value $b.AutoConfigURL -EA SilentlyContinue }
+            else                  { Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -EA SilentlyContinue }
+            if ($null -ne $b.ProxyEnable) { Set-ItemProperty -Path $RegIE -Name ProxyEnable -Value $b.ProxyEnable -EA SilentlyContinue }
+            if ($b.ProxyServer)   { Set-ItemProperty -Path $RegIE -Name ProxyServer -Value $b.ProxyServer -EA SilentlyContinue }
+            else                  { Remove-ItemProperty -Path $RegIE -Name ProxyServer -EA SilentlyContinue }
+            if ($b.ProxyOverride) { Set-ItemProperty -Path $RegIE -Name ProxyOverride -Value $b.ProxyOverride -EA SilentlyContinue }
+            else                  { Remove-ItemProperty -Path $RegIE -Name ProxyOverride -EA SilentlyContinue }
             Remove-Item $FileProxy -Force -EA SilentlyContinue
-            Notify-Inet
         } catch { }
     }
+    try { netsh winhttp reset proxy 2>&1 | Out-Null } catch { }
+    Notify-Inet
     $script:DaThayDoiProxy = $false
     $script:CongDangDung   = 0
 }
 
 function Stop-ProxyMode {
     if ($script:Proxy) { try { $script:Proxy.Stop() } catch { } ; $script:Proxy = $null }
+    Restore-Hosts
     Restore-ProxyCfg
 }
 
@@ -429,10 +603,9 @@ function Build-PacContent($port) {
     return @"
 function FindProxyForURL(url, host) {
   host = host.toLowerCase();
-  if (url.substring(0, 5) == "http:") return "DIRECT";
   var d = [$domainsJs];
   for (var i = 0; i < d.length; i++) {
-    if (host == d[i] || dnsDomainIs(host, "." + d[i])) return "PROXY 127.0.0.1:$port";
+    if (host == d[i] || dnsDomainIs(host, "." + d[i])) return "PROXY 127.0.0.1:$port; DIRECT";
   }
   return "DIRECT";
 }
@@ -466,17 +639,48 @@ function Start-ProxyMode([int]$mode = 2) {
     $script:Proxy        = $px
     $script:CongDangDung = $cong
     Save-ProxyCfg
-    Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value "http://127.0.0.1:$cong/proxy.pac"
+    Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value "http://127.0.0.1:$cong/proxy.pac" -EA SilentlyContinue
+    Set-ItemProperty -Path $RegIE -Name ProxyEnable   -Value 1 -EA SilentlyContinue
+    Set-ItemProperty -Path $RegIE -Name ProxyServer   -Value "127.0.0.1:$cong" -EA SilentlyContinue
+    Set-ItemProperty -Path $RegIE -Name ProxyOverride -Value "<local>;127.0.0.1;localhost" -EA SilentlyContinue
+    try { netsh winhttp set proxy proxy-server="127.0.0.1:$cong" bypass-list="localhost;127.0.0.1;<local>" 2>&1 | Out-Null } catch { }
     Notify-Inet
     $script:DaThayDoiProxy = $true
     $script:MoTa           = "SplitProxy Mode $mode (cong $cong)"
     Ok "Proxy noi bo dang chay tai cong $cong (Mode $mode)"
+
+    if ($px.HasDirect443) {
+        if (Apply-PubgHosts) {
+            Ok 'PUBG Direct Sniper (Port 443 + Hosts) da duoc kich hoat!'
+        }
+    }
     return $true
 }
 
 # ================================================================
 #  QUAN LY FILE HOSTS
 # ================================================================
+function Apply-PubgHosts {
+    Save-Hosts
+    $domainsToMap = @(
+        'prod-live-front.playbattlegrounds.com',
+        'prod-live-xenuine.playbattlegrounds.com',
+        'api.pubg.com'
+    )
+    $linesToAdd = $domainsToMap | ForEach-Object { "127.0.0.1 $_ # SteamAccessFix" }
+    try {
+        $cur = if (Test-Path $FileHostsSys) { Get-Content $FileHostsSys -Encoding ASCII } else { @() }
+        $filtered = $cur | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
+        $newContent = ($filtered + $linesToAdd) -join "`r`n"
+        [IO.File]::WriteAllText($FileHostsSys, $newContent + "`r`n", [Text.Encoding]::ASCII)
+        ipconfig /flushdns 2>&1 | Out-Null
+        $script:DaThayDoiHosts = $true
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Save-Hosts {
     if (Test-Path $FileHosts) { return }
     if (Test-Path $FileHostsSys) { Copy-Item -Path $FileHostsSys -Destination $FileHosts -Force }
@@ -608,6 +812,9 @@ function Show-StatusBar {
     Say ''
     Ve-Khung "  HE THONG HOAT DONG  -  SAN SANG VAO GAME" "  $lvlText" 'Green'
     Say '  Pham vi ho tro: Steam, PUBG, CS2, Dota 2, Naraka, Delta Force' 'DarkGreen'
+    if ($script:DaThayDoiHosts) {
+        Say '  PUBG Direct Sniper: Kich hoat (Port 443 + Hosts bypass chong rot mang)' 'Green'
+    }
     Say '  Luu luong tran dau UDP di TRUC TIEP (0ms overhead, anti-cheat safe)' 'DarkGray'
     Say ''
     Sep
