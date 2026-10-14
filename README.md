@@ -6,19 +6,21 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-blue?logo=windows" alt="Windows Support">
   <img src="https://img.shields.io/badge/Driver-Zero%20Dependency-brightgreen" alt="No Drivers">
   <img src="https://img.shields.io/badge/Anti--Cheat-100%25%20Safe-success" alt="Anti-Cheat Safe">
-  <img src="https://img.shields.io/badge/Version-1.1.3-orange" alt="Version 1.1.3">
+  <img src="https://img.shields.io/badge/Version-1.1.4-orange" alt="Version 1.1.4">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
 </p>
 
 <hr>
 
-## Tính năng chính (v1.1.3)
+## Tính năng chính (v1.1.4)
 
 - **Mở khóa toàn diện Steam**: Khắc phục lỗi không tải được Steam Store, Community, hồ sơ người chơi, hình ảnh, CDN tải game và Steam Web API.
 - **Hỗ trợ tối ưu CS2 & Dota 2**: Đảm bảo tải mượt mà CS2 / Dota 2 blog, cập nhật, cộng đồng, Steam API Game Coordinator (GC); lưu lượng trận đấu SDR UDP đi trực tiếp 100%.
 - **Sửa triệt để lỗi PUBG (Direct Sniper Port 443 + Hosts Bypass)**: Giải quyết dứt điểm lỗi màn hình khói, **"Connection Lost"** và **"Servers are too busy, please try again later"** sau trận đấu. Sử dụng cơ chế bắt gói TLS trực tiếp trên cổng 443 kết hợp phân mảnh SNI, bảo vệ cả các kết nối socket C++ thuần và libcurl của game mà không phụ thuộc vào cài đặt proxy Windows.
 - **Hỗ trợ định tuyến Naraka: Bladepoint & Delta Force**: Đảm bảo kết nối thông suốt đến các dịch vụ máy chủ và API sự kiện của game.
 - **Tối ưu độ trễ và Ping Windows**: Tự động tinh chỉnh network stack Windows (`NetworkThrottlingIndex`, `SystemResponsiveness`, TCP AutoTuning) nhằm loại bỏ độ trễ và nghẽn băng thông khi chơi game.
+- **Tự động dọn dẹp khi bấm [X] (SetConsoleCtrlHandler)**: Tích hợp hook native Win32 API. Khi người dùng tắt ngang cửa sổ bằng nút **[X]**, tool sẽ tự động dọn sạch Proxy, WinHTTP và Hosts trong 30ms trước khi thoát, ngăn chặn hoàn toàn việc mất mạng.
+- **Tự chữa lành & Giải phóng mạng từ bản cũ (Self-Healing)**: Tự động phát hiện và thanh lọc các cấu hình proxy bị kẹt từ phiên bản cũ (v1.1.3 trở về trước) ngay lập tức khi khởi chạy.
 - **100% Anti-Cheat Safe**: Hoạt động hoàn toàn ở chế độ người dùng (User-Mode), không cài driver kernel (`WinDivert`, GoodbyeDPI), an toàn tuyệt đối với BattlEye, Easy Anti-Cheat, Vanguard, VAC, ACE.
 
 ---
@@ -66,9 +68,9 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 ## Điểm vượt trội về an toàn và hiệu năng
 
 - **Zero-Driver (Không Driver)**: Hoàn toàn không cài đặt driver can thiệp sâu vào kernel hệ thống. Không bao giờ kích hoạt cờ cảnh báo của bất kỳ phần mềm chống gian lận nào.
-- **Chỉ Proxy Web, Match Game đi thẳng**: Tệp cấu hình Proxy PAC chỉ áp dụng cho danh sách tên miền sảnh chờ và web Steam/PUBG/Naraka. Toàn bộ lưu lượng gói tin trận đấu (UDP game match traffic) kết nối trực tiếp đến máy chủ game, đảm bảo 0 ms độ trễ phát sinh.
-- **Tự động khôi phục hoàn toàn**: Khi bạn nhấn `Enter` để thoát, toàn bộ cấu hình DNS, PAC Proxy và Registry sẽ được hoàn trả về trạng thái nguyên bản trước khi chạy.
-- **Tự phục hồi sau sự cố**: Nếu máy tính bị sập nguồn đột ngột hoặc người dùng tắt ngang cửa sổ, công cụ sẽ tự động phát hiện và dọn dẹp cấu hình dư thừa ở lần khởi động kế tiếp.
+- **Chỉ Proxy Web Game, Mọi Trang Khác & Match UDP Đi Thẳng**: Tệp cấu hình Proxy PAC chỉ định tuyến danh sách tên miền sảnh chờ và web Steam/PUBG/Naraka. Facebook, YouTube, Google, lướt web thông thường và toàn bộ lưu lượng trận đấu (UDP game match traffic) kết nối trực tiếp 100%, đảm bảo 0 ms độ trễ phát sinh.
+- **Tự động khôi phục hoàn toàn khi bấm [X]**: Kể cả khi người dùng tắt đột ngột bằng nút [X] hoặc tắt máy, hook Win32 API bảo vệ sẽ dọn dẹp sạch sẽ toàn bộ cấu hình trước khi thoát.
+- **Tự phục hồi sau sự cố**: Tự động phát hiện và dọn dẹp cấu hình dư thừa ở mỗi lần khởi động.
 
 ---
 
@@ -78,10 +80,11 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 >   - Gõ `1` + Enter: **Chạy Cấp độ 1** (Google DNS + Tối ưu Ping, tắt Proxy).
 >   - Gõ `2` + Enter: **Chạy Cấp độ 2** (SplitProxy SNI Fragmentation vượt chặn mạnh).
 >   - Gõ `K` + Enter: **Giữ lại (Keep)** thiết lập DNS và tinh chỉnh network trên máy rồi thoát.
+>   - Gõ `R` + Enter: **Khôi phục mạng sạch 100% & Gỡ bỏ mọi thiết lập** rồi thoát ngay.
 >   - Nhấn `Enter` hoặc `Q`: **Khôi phục toàn bộ cài đặt mạng ban đầu** và thoát an toàn.
 
 ---
 
 <p align="center">
-  <b>Phiên bản hiện tại:</b> 1.1.3 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
+  <b>Phiên bản hiện tại:</b> 1.1.4 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
 </p>

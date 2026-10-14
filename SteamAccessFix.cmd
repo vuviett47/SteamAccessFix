@@ -19,7 +19,7 @@ exit /b
 
 #PSBEGIN#
 # ================================================================
-#  SteamAccessFix v1.1.3 - All-In-One Game & Store Fix (Windows)
+#  SteamAccessFix v1.1.4 - All-In-One Game & Store Fix (Windows)
 #  Pure User-Mode  |  No Drivers  |  Anti-Cheat Safe
 # ================================================================
 
@@ -31,10 +31,10 @@ $ProgressPreference    = 'SilentlyContinue'
 $OutputEncoding           = [System.Text.Encoding]::UTF8
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-$Host.UI.RawUI.WindowTitle = 'SteamAccessFix v1.1.3'
+$Host.UI.RawUI.WindowTitle = 'SteamAccessFix v1.1.4'
 
 # --- Cau hinh ---
-$script:AppVersion  = '1.1.3'
+$script:AppVersion  = '1.1.4'
 $script:GitHubRepo  = 'vuviett47/SteamAccessFix'
 $script:AutoUpdate  = $false
 
@@ -115,11 +115,14 @@ function Ve-Khung($tieuDe, $phuDe = '', $mau = 'Cyan') {
 $MaProxy = @'
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using Microsoft.Win32;
 
 public class SplitProxy
 {
@@ -504,6 +507,101 @@ public class SplitProxy
         }
     }
 }
+
+public class NativeCleanup
+{
+    [DllImport("Kernel32")]
+    public static extern bool SetConsoleCtrlHandler(HandlerRoutine Handler, bool Add);
+
+    [DllImport("wininet.dll")]
+    public static extern bool InternetSetOption(IntPtr h, int o, IntPtr b, int l);
+
+    public delegate bool HandlerRoutine(int CtrlType);
+    private static HandlerRoutine _routine;
+    public static volatile bool IsActive = false;
+
+    public static void Register()
+    {
+        if (_routine == null) {
+            _routine = new HandlerRoutine(OnConsoleCtrl);
+            SetConsoleCtrlHandler(_routine, true);
+        }
+    }
+
+    public static void Unregister()
+    {
+        IsActive = false;
+    }
+
+    private static bool OnConsoleCtrl(int ctrlType)
+    {
+        if (IsActive) {
+            DoEmergencyCleanup();
+        }
+        return false;
+    }
+
+    public static void DoEmergencyCleanup()
+    {
+        try {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Internet Settings", true)) {
+                if (key != null) {
+                    key.SetValue("ProxyEnable", 0, RegistryValueKind.DWord);
+                    try { key.DeleteValue("ProxyServer", false); } catch { }
+                    try { key.DeleteValue("AutoConfigURL", false); } catch { }
+                }
+            }
+        } catch { }
+
+        try {
+            using (RegistryKey connKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Internet Settings\Connections", true)) {
+                if (connKey != null) {
+                    string[] names = new string[] { "DefaultConnectionSettings", "SavedLegacySettings" };
+                    foreach (string n in names) {
+                        byte[] b = connKey.GetValue(n) as byte[];
+                        if (b != null && b.Length >= 9) {
+                            b[8] = 1;
+                            connKey.SetValue(n, b, RegistryValueKind.Binary);
+                        }
+                    }
+                }
+            }
+        } catch { }
+
+        try {
+            InternetSetOption(IntPtr.Zero, 39, IntPtr.Zero, 0);
+            InternetSetOption(IntPtr.Zero, 37, IntPtr.Zero, 0);
+        } catch { }
+
+        try {
+            string hosts = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"drivers\etc\hosts");
+            if (File.Exists(hosts)) {
+                string[] lines = File.ReadAllLines(hosts);
+                var keep = new System.Collections.Generic.List<string>();
+                bool changed = false;
+                foreach (var line in lines) {
+                    if (line.IndexOf("SteamAccessFix", StringComparison.OrdinalIgnoreCase) >= 0) {
+                        changed = true;
+                    } else {
+                        keep.Add(line);
+                    }
+                }
+                if (changed) {
+                    File.WriteAllLines(hosts, keep.ToArray());
+                }
+            }
+        } catch { }
+
+        try {
+            ProcessStartInfo psi = new ProcessStartInfo("netsh", "winhttp reset proxy");
+            psi.CreateNoWindow = true;
+            psi.UseShellExecute = false;
+            using (Process p = Process.Start(psi)) {
+                if (p != null) p.WaitForExit(1000);
+            }
+        } catch { }
+    }
+}
 '@
 
 # ================================================================
@@ -564,10 +662,21 @@ function Notify-Inet {
 function Save-ProxyCfg {
     if (Test-Path $FileProxy) { return }
     $cu = Get-ItemProperty $RegIE -EA SilentlyContinue
+    $proxyServer = $cu.ProxyServer
+    $autoConfig  = $cu.AutoConfigURL
+    $proxyEnable = $cu.ProxyEnable
+
+    # Loc sach neu registry dang bi ton dong proxy tu phien cu (v1.1.3 tro ve truoc)
+    if ($proxyServer -match '127\.0\.0\.1|localhost' -or $autoConfig -match '127\.0\.0\.1|localhost|proxy\.pac') {
+        $proxyServer = $null
+        $autoConfig  = $null
+        $proxyEnable = 0
+    }
+
     [pscustomobject]@{
-        AutoConfigURL = $cu.AutoConfigURL
-        ProxyEnable   = $cu.ProxyEnable
-        ProxyServer   = $cu.ProxyServer
+        AutoConfigURL = $autoConfig
+        ProxyEnable   = $proxyEnable
+        ProxyServer   = $proxyServer
         ProxyOverride = $cu.ProxyOverride
     } | ConvertTo-Json | Set-Content -Path $FileProxy -Encoding ASCII
 }
@@ -576,18 +685,50 @@ function Restore-ProxyCfg {
     if (Test-Path $FileProxy) {
         try {
             $b = Get-Content $FileProxy -Raw | ConvertFrom-Json
-            if ($b.AutoConfigURL) { Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value $b.AutoConfigURL -EA SilentlyContinue }
-            else                  { Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -EA SilentlyContinue }
-            if ($null -ne $b.ProxyEnable) { Set-ItemProperty -Path $RegIE -Name ProxyEnable -Value $b.ProxyEnable -EA SilentlyContinue }
-            if ($b.ProxyServer)   { Set-ItemProperty -Path $RegIE -Name ProxyServer -Value $b.ProxyServer -EA SilentlyContinue }
-            else                  { Remove-ItemProperty -Path $RegIE -Name ProxyServer -EA SilentlyContinue }
-            if ($b.ProxyOverride) { Set-ItemProperty -Path $RegIE -Name ProxyOverride -Value $b.ProxyOverride -EA SilentlyContinue }
-            else                  { Remove-ItemProperty -Path $RegIE -Name ProxyOverride -EA SilentlyContinue }
+            if ($b.AutoConfigURL -and $b.AutoConfigURL -notmatch '127\.0\.0\.1|localhost|proxy\.pac') {
+                Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value $b.AutoConfigURL -EA SilentlyContinue
+            } else {
+                Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -EA SilentlyContinue
+            }
+
+            if ($null -ne $b.ProxyEnable -and $b.ProxyServer -notmatch '127\.0\.0\.1|localhost') {
+                Set-ItemProperty -Path $RegIE -Name ProxyEnable -Value $b.ProxyEnable -EA SilentlyContinue
+            } else {
+                Set-ItemProperty -Path $RegIE -Name ProxyEnable -Value 0 -EA SilentlyContinue
+            }
+
+            if ($b.ProxyServer -and $b.ProxyServer -notmatch '127\.0\.0\.1|localhost') {
+                Set-ItemProperty -Path $RegIE -Name ProxyServer -Value $b.ProxyServer -EA SilentlyContinue
+            } else {
+                Remove-ItemProperty -Path $RegIE -Name ProxyServer -EA SilentlyContinue
+            }
+
+            if ($b.ProxyOverride) {
+                Set-ItemProperty -Path $RegIE -Name ProxyOverride -Value $b.ProxyOverride -EA SilentlyContinue
+            } else {
+                Remove-ItemProperty -Path $RegIE -Name ProxyOverride -EA SilentlyContinue
+            }
             Remove-Item $FileProxy -Force -EA SilentlyContinue
         } catch { }
+    } else {
+        Set-ItemProperty -Path $RegIE -Name ProxyEnable -Value 0 -EA SilentlyContinue
+        Remove-ItemProperty -Path $RegIE -Name ProxyServer -EA SilentlyContinue
+        Remove-ItemProperty -Path $RegIE -Name AutoConfigURL -EA SilentlyContinue
     }
+
+    # Luon dong bo DefaultConnectionSettings & SavedLegacySettings de Chrome/Edge luon ve Direct
+    $regConn = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\Connections'
+    foreach ($val in @('DefaultConnectionSettings', 'SavedLegacySettings')) {
+        $bytes = (Get-ItemProperty $regConn -EA SilentlyContinue).$val
+        if ($bytes -and $bytes.Length -ge 9) {
+            $bytes[8] = 1
+            Set-ItemProperty -Path $regConn -Name $val -Value $bytes -EA SilentlyContinue
+        }
+    }
+
     try { netsh winhttp reset proxy 2>&1 | Out-Null } catch { }
     Notify-Inet
+    if ('NativeCleanup' -as [type]) { [NativeCleanup]::IsActive = $false }
     $script:DaThayDoiProxy = $false
     $script:CongDangDung   = 0
 }
@@ -617,6 +758,7 @@ function Start-ProxyMode([int]$mode = 2) {
         try { Add-Type -TypeDefinition $MaProxy -Language CSharp -EA Stop }
         catch { Err "Khong khoi tao duoc proxy: $($_.Exception.Message)"; return $false }
     }
+    if ('NativeCleanup' -as [type]) { [NativeCleanup]::Register() }
 
     if ($script:Proxy) {
         $script:Proxy.Mode = $mode
@@ -639,15 +781,19 @@ function Start-ProxyMode([int]$mode = 2) {
     $script:Proxy        = $px
     $script:CongDangDung = $cong
     Save-ProxyCfg
+
+    # Chi dung AutoConfigURL de phan luong domain Game/Steam qua PAC.
+    # ProxyEnable giu = 0 de tranh ep toan bo traffic mang (Facebook, YouTube) vao localhost!
     Set-ItemProperty -Path $RegIE -Name AutoConfigURL -Value "http://127.0.0.1:$cong/proxy.pac" -EA SilentlyContinue
-    Set-ItemProperty -Path $RegIE -Name ProxyEnable   -Value 1 -EA SilentlyContinue
-    Set-ItemProperty -Path $RegIE -Name ProxyServer   -Value "127.0.0.1:$cong" -EA SilentlyContinue
-    Set-ItemProperty -Path $RegIE -Name ProxyOverride -Value "<local>;127.0.0.1;localhost" -EA SilentlyContinue
-    try { netsh winhttp set proxy proxy-server="127.0.0.1:$cong" bypass-list="localhost;127.0.0.1;<local>" 2>&1 | Out-Null } catch { }
+    Set-ItemProperty -Path $RegIE -Name ProxyEnable   -Value 0 -EA SilentlyContinue
+    Remove-ItemProperty -Path $RegIE -Name ProxyServer -EA SilentlyContinue
+    try { netsh winhttp reset proxy 2>&1 | Out-Null } catch { }
     Notify-Inet
+
+    if ('NativeCleanup' -as [type]) { [NativeCleanup]::IsActive = $true }
     $script:DaThayDoiProxy = $true
     $script:MoTa           = "SplitProxy Mode $mode (cong $cong)"
-    Ok "Proxy noi bo dang chay tai cong $cong (Mode $mode)"
+    Ok "Proxy noi bo dang chay tai cong $cong (PAC loc domain Game)"
 
     if ($px.HasDirect443) {
         if (Apply-PubgHosts) {
@@ -669,8 +815,8 @@ function Apply-PubgHosts {
     )
     $linesToAdd = $domainsToMap | ForEach-Object { "127.0.0.1 $_ # SteamAccessFix" }
     try {
-        $cur = if (Test-Path $FileHostsSys) { Get-Content $FileHostsSys -Encoding ASCII } else { @() }
-        $filtered = $cur | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
+        $cur = if (Test-Path $FileHostsSys) { @(Get-Content $FileHostsSys -Encoding ASCII -EA SilentlyContinue) } else { @() }
+        $filtered = @($cur | Where-Object { $_ -notmatch '#\s*SteamAccessFix' })
         $newContent = ($filtered + $linesToAdd) -join "`r`n"
         [IO.File]::WriteAllText($FileHostsSys, $newContent + "`r`n", [Text.Encoding]::ASCII)
         ipconfig /flushdns 2>&1 | Out-Null
@@ -687,14 +833,15 @@ function Save-Hosts {
 }
 
 function Restore-Hosts {
-    if (Test-Path $FileHosts) {
-        try { Copy-Item -Path $FileHosts -Destination $FileHostsSys -Force; Remove-Item $FileHosts -Force -EA SilentlyContinue; ipconfig /flushdns | Out-Null } catch { }
-    } elseif (Test-Path $FileHostsSys) {
+    if (Test-Path $FileHostsSys) {
         try {
-            $lines = Get-Content $FileHostsSys | Where-Object { $_ -notmatch '#\s*SteamAccessFix' }
-            Set-Content -Path $FileHostsSys -Value $lines -Encoding ASCII
-            ipconfig /flushdns | Out-Null
+            $lines = @(Get-Content $FileHostsSys -EA SilentlyContinue | Where-Object { $_ -notmatch '#\s*SteamAccessFix' })
+            [IO.File]::WriteAllLines($FileHostsSys, [string[]]$lines, [Text.Encoding]::ASCII)
+            ipconfig /flushdns 2>&1 | Out-Null
         } catch { }
+    }
+    if (Test-Path $FileHosts) {
+        Remove-Item $FileHosts -Force -EA SilentlyContinue
     }
     $script:DaThayDoiHosts = $false
 }
@@ -826,9 +973,56 @@ function Show-StatusBar {
     Say '  [1]      Chay Cap do 1 - DNS Google only (tat Proxy)' 'White'
     Say '  [2]      Chay Cap do 2 - SplitProxy SNI (vuot chan manh hon)' 'White'
     Say '  [K]      Giu lai DNS & toi uu Ping vinh vien roi thoat' 'White'
-    Say '  [Enter]  KHOI PHUC TOAN BO ve ban dau va thoat an toan (hoac go Q)' 'White'
+    Say '  [R]      KHOI PHUC MANG SACH 100% & thoat ngay' 'Yellow'
+    Say '  [Enter]  Khoi phuc cai dat va thoat an toan (hoac go Q)' 'White'
     Sep
     Say ''
+}
+
+# ================================================================
+#  DON DEP & TU PHUC HOI SU CO (SELF-HEALING)
+# ================================================================
+function Sanitize-Environment {
+    $hasIssue = $false
+
+    # 1. Kiem tra Registry ton dong proxy cu (127.0.0.1 hoac port 18080)
+    $cu = Get-ItemProperty $RegIE -EA SilentlyContinue
+    if ($cu.ProxyServer -match '127\.0\.0\.1|18080' -or $cu.AutoConfigURL -match '127\.0\.0\.1|18080|proxy\.pac') {
+        $hasIssue = $true
+    }
+
+    # 2. Kiem tra WinHTTP
+    $winhttp = netsh winhttp show proxy 2>&1 | Out-String
+    if ($winhttp -match '127\.0\.0\.1|18080') {
+        $hasIssue = $true
+    }
+
+    # 3. Kiem tra file hosts con sot lai domain PUBG cua SAF khong
+    if (Test-Path $FileHostsSys) {
+        $hLines = Get-Content $FileHostsSys -EA SilentlyContinue
+        if ($hLines -match '#\s*SteamAccessFix') {
+            $hasIssue = $true
+        }
+    }
+
+    # 4. Kiem tra file backup cu bi nhiem doc
+    if (Test-Path $FileProxy) {
+        try {
+            $b = Get-Content $FileProxy -Raw | ConvertFrom-Json
+            if ($b.ProxyServer -match '127\.0\.0\.1|18080' -or $b.AutoConfigURL -match '127\.0\.0\.1|18080') {
+                $hasIssue = $true
+                Remove-Item $FileProxy -Force -EA SilentlyContinue
+            }
+        } catch { }
+    }
+
+    if ($hasIssue -or (Test-Path $FileDns) -or (Test-Path $FileProxy) -or (Test-Path $FileHosts) -or (Test-Path $FileNetTweaks)) {
+        Warn 'Phat hien cai dat mang chua dong dung cach (hoac ton dong tu ban cu) - dang tu dong khoi phuc...'
+        Restore-All
+        Start-Sleep -Milliseconds 600
+        Ok 'He thong da duoc lam sach va san sang!'
+        Say ''
+    }
 }
 
 # ================================================================
@@ -837,12 +1031,15 @@ function Show-StatusBar {
 try {
     Ve-Khung "  SteamAccessFix v$script:AppVersion  -  Game Connectivity Fix"
 
-    # Don dep phien truoc neu bi tat dot ngot
-    if ((Test-Path $FileDns) -or (Test-Path $FileProxy) -or (Test-Path $FileHosts) -or (Test-Path $FileNetTweaks)) {
-        Warn 'Phien truoc chua dong dung cach - dang don dep...'
-        Restore-All
-        Start-Sleep -Seconds 1
-        Say ''
+    # Don dep phien truoc neu bi tat dot ngot & Tu chua lanh neu dinh loi ban cu v1.1.3
+    Sanitize-Environment
+
+    # Khoi tao C# va dang ky Exit Handler som de bat tat ca cac su kien dong cua so [X]
+    if (-not ('NativeCleanup' -as [type])) {
+        try { Add-Type -TypeDefinition $MaProxy -Language CSharp -EA Stop } catch { }
+    }
+    if ('NativeCleanup' -as [type]) {
+        [NativeCleanup]::Register()
     }
 
     Check-GitHubUpdate
@@ -871,7 +1068,7 @@ try {
     Show-StatusBar
 
     while ($true) {
-        Write-Host '  Lua chon [1 / 2 / K / Enter=Thoat]: ' -ForegroundColor Yellow -NoNewline
+        Write-Host '  Lua chon [1 / 2 / K / R / Enter=Thoat]: ' -ForegroundColor Yellow -NoNewline
         $k = Read-Host
 
         if ($k -eq '2') {
@@ -907,6 +1104,15 @@ try {
             Ok 'DNS Google & toi uu Ping da duoc luu vinh vien tren may.'
             break
         }
+        elseif ($k -match '^[rR]') {
+            Say ''
+            Info 'Dang khoi phuc mang he thong sach 100% va go bo moi thiet lap...'
+            Restore-All
+            Remove-Item -Path (Join-Path $ThuMucLuu '*') -Force -Recurse -EA SilentlyContinue
+            Ok 'He thong da duoc khoi phuc sach se hoan toan!'
+            Start-Sleep -Seconds 1
+            break
+        }
         elseif ($k -match '^[qQ]' -or [string]::IsNullOrWhiteSpace($k)) {
             break
         }
@@ -921,5 +1127,8 @@ finally {
         Sep
         Restore-All
         Start-Sleep -Seconds 1
+    }
+    if ('NativeCleanup' -as [type]) {
+        [NativeCleanup]::Unregister()
     }
 }
