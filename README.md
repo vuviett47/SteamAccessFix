@@ -6,13 +6,21 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-blue?logo=windows" alt="Windows Support">
   <img src="https://img.shields.io/badge/Driver-Zero%20Dependency-brightgreen" alt="No Drivers">
   <img src="https://img.shields.io/badge/Anti--Cheat-100%25%20Safe-success" alt="Anti-Cheat Safe">
-  <img src="https://img.shields.io/badge/Version-1.1.4-orange" alt="Version 1.1.4">
+  <img src="https://img.shields.io/badge/Version-1.1.5-orange" alt="Version 1.1.5">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
 </p>
 
 <hr>
 
-## Tính năng chính (v1.1.4)
+## Có gì mới ở v1.1.5
+
+- **Phím [D] - Tùy chọn Giữ nguyên DNS hệ thống (`/nodns`)**: Giữ nguyên 100% DNS/IP tĩnh ban đầu, loại bỏ hoàn toàn lỗi mất mạng cho máy dùng IP tĩnh hoặc mạng nội bộ.
+- **Phím [A] - Tự khởi động ngầm cùng Windows (`/install` | `/uninstall`)**: Tùy chọn chạy ẩn tự động khi đăng nhập, không hiện cửa sổ, không hỏi UAC.
+- **Chống mở trùng (Single-Instance)**: Khóa Mutex ngăn chặn việc chạy đè nhiều bản gây xung đột.
+- **Vá triệt để lỗi mất kết nối server PUBG**: Xử lý phân mảnh TLS handshake (TCP MSS 1460 bytes) ở Port 443 Sniper, tăng timeout lên 15s và nâng cache DNS chống rớt mạng giữa trận.
+- **Sửa lỗi khởi động**: Khắc phục lỗi mã hóa UTF-8 BOM (`∩╗┐`), lỗi gọi hàm tham số và cơ chế kiểm tra cập nhật.
+
+## Tính năng cốt lõi
 
 - **Mở khóa toàn diện Steam**: Khắc phục lỗi không tải được Steam Store, Community, hồ sơ người chơi, hình ảnh, CDN tải game và Steam Web API.
 - **Hỗ trợ tối ưu CS2 & Dota 2**: Đảm bảo tải mượt mà CS2 / Dota 2 blog, cập nhật, cộng đồng, Steam API Game Coordinator (GC); lưu lượng trận đấu SDR UDP đi trực tiếp 100%.
@@ -79,6 +87,8 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 > - **Phím tắt điều khiển linh hoạt:**
 >   - Gõ `1` + Enter: **Chạy Cấp độ 1** (Google DNS + Tối ưu Ping, tắt Proxy).
 >   - Gõ `2` + Enter: **Chạy Cấp độ 2** (SplitProxy SNI Fragmentation vượt chặn mạnh).
+>   - Gõ `D` + Enter: **Chuyển chế độ DNS** (Google DNS / Giữ nguyên DNS hệ thống cho IP tĩnh).
+>   - Gõ `A` + Enter: **Bật / Tắt tự khởi động NGẦM** cùng Windows (Task Scheduler).
 >   - Gõ `K` + Enter: **Giữ lại (Keep)** thiết lập DNS và tinh chỉnh network trên máy rồi thoát.
 >   - Gõ `R` + Enter: **Khôi phục mạng sạch 100% & Gỡ bỏ mọi thiết lập** rồi thoát ngay.
 >   - Nhấn `Enter` hoặc `Q`: **Khôi phục toàn bộ cài đặt mạng ban đầu** và thoát an toàn.
@@ -86,5 +96,5 @@ Công cụ tuân theo nguyên tắc **thử từ nhẹ đến nâng cao** và **
 ---
 
 <p align="center">
-  <b>Phiên bản hiện tại:</b> 1.1.4 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
+  <b>Phiên bản hiện tại:</b> 1.1.5 &bull; <b>Tác giả:</b> <a href="https://github.com/vuviett47">vuviett47</a>
 </p>
